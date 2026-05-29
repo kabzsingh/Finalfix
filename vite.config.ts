@@ -6,4 +6,11 @@ export default defineConfig({
     routesDirectory: "./src/routes",
     generatedRouteTree: "./src/routeTree.gen.ts",
   },
+  vite: {
+    server: {
+      host: "0.0.0.0",
+      port: 5000,
+      allowedHosts: true,
+    },
+  },
 });

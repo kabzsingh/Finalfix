@@ -70,10 +70,12 @@ function AdminPage() {
       console.error("Load failed", e);
       toast.error("Failed to load admin data");
     }
-const getToken = async () => {
-  const { data: { session } } = await supabase.getSession();
-  return session?.access_token ?? '';
-};
+  };
+
+  const getToken = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token ?? '';
+  };
 
   const runBootstrap = useCallback(async () => {
     if (!user?.id) return;

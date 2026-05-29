@@ -20,16 +20,41 @@ export function getRuntimeEnv(): Env {
   if (_runtimeEnv) return _runtimeEnv;
 
   // Fallback: try process.env (works in local wrangler dev / Node)
+  // Also try VITE_ prefixed vars for Vite dev server mode
   const url =
-    (typeof process !== "undefined" && process.env?.SUPABASE_URL) || "";
+    (typeof process !== "undefined" && (
+      process.env?.SUPABASE_URL ||
+      process.env?.VITE_SUPABASE_URL
+    )) ||
+    (typeof import.meta !== "undefined" && (
+      (import.meta as any).env?.SUPABASE_URL ||
+      (import.meta as any).env?.VITE_SUPABASE_URL
+    )) ||
+    "";
+
   const pub =
-    (typeof process !== "undefined" && process.env?.SUPABASE_PUBLISHABLE_KEY) || "";
+    (typeof process !== "undefined" && (
+      process.env?.SUPABASE_PUBLISHABLE_KEY ||
+      process.env?.VITE_SUPABASE_PUBLISHABLE_KEY
+    )) ||
+    (typeof import.meta !== "undefined" && (
+      (import.meta as any).env?.SUPABASE_PUBLISHABLE_KEY ||
+      (import.meta as any).env?.VITE_SUPABASE_PUBLISHABLE_KEY
+    )) ||
+    "";
+
   const svc =
-    (typeof process !== "undefined" && process.env?.SUPABASE_SERVICE_ROLE_KEY) || "";
+    (typeof process !== "undefined" && (
+      process.env?.SUPABASE_SERVICE_ROLE_KEY
+    )) ||
+    (typeof import.meta !== "undefined" && (
+      (import.meta as any).env?.SUPABASE_SERVICE_ROLE_KEY
+    )) ||
+    "";
 
   if (!url) {
     throw new Error(
-      "SUPABASE_URL is not set. Add it as a Plaintext variable in Cloudflare Workers → Settings → Variables & Secrets."
+      "SUPABASE_URL is not set. Add it to .env as VITE_SUPABASE_URL for local dev, or as a variable in Cloudflare Workers → Settings → Variables & Secrets for production."
     );
   }
 
