@@ -3,7 +3,7 @@
   "name": "dashboardwash",
   "compatibility_date": "2024-11-01",
   "compatibility_flags": ["nodejs_compat"],
-  "main": "src/server.ts",
+  "main": "dist/server/server.js",
   "assets": {
     "directory": "dist/client",
     "binding": "ASSETS"
@@ -11,23 +11,6 @@
   "observability": {
     "enabled": true
   },
-  // ── Environment variables ──────────────────────────────────────────────────
-  // Set these via the Cloudflare dashboard (Workers & Pages → Settings → Variables)
-  // or with:  wrangler secret put SUPABASE_SERVICE_ROLE_KEY
-  //
-  // Required secrets (never commit real values here):
-  //   SUPABASE_URL                  https://<project-id>.supabase.co
-  //   SUPABASE_PUBLISHABLE_KEY      sb_publishable_...
-  //   SUPABASE_SERVICE_ROLE_KEY     eyJ...  (service role, keep secret)
-  //
-  // Optional (already baked into client bundle via VITE_ prefix in .env):
-  //   VITE_SUPABASE_URL
-  //   VITE_SUPABASE_PUBLISHABLE_KEY
-  //
-  // For local dev with wrangler dev, add to a .dev.vars file (gitignored):
-  //   SUPABASE_URL=https://...
-  //   SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
-  //   SUPABASE_SERVICE_ROLE_KEY=eyJ...
   "vars": {
     "NODE_ENV": "production"
   }
