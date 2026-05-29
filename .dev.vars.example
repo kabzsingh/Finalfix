@@ -1,0 +1,6 @@
+# Copy this file to .dev.vars (gitignored) for local `wrangler dev` usage.
+# These secrets are injected by Cloudflare Workers at runtime on the server side.
+
+SUPABASE_URL=https://your-project-id.supabase.co
+SUPABASE_PUBLISHABLE_KEY=sb_publishable_xxxxxxxxxxxxxxxxxxxxx
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
