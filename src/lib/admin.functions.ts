@@ -205,6 +205,7 @@ export const seedDemoData = createServerFn({ method: "POST" })
 // ── User approval & role management ─────────────────────
 export const listAllUsers = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
+  .inputValidator((data: { __token: string }) => data)
   .handler(async ({ context }) => {
     await assertAdmin(context.supabase, context.userId);
     const env = getRuntimeEnv();
