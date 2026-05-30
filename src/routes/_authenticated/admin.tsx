@@ -382,7 +382,8 @@ function SmtpSettingsPanel() {
   const [encryption, setEncryption] = useState<"tls" | "ssl" | "none">("tls");
 
   useEffect(() => {
-    get().then((data) => {
+    supabase.auth.getSession().then(({ data: { session } }) =>
+(get as any)({ data: { __token: session?.access_token ?? '' } })).then((data: any) => {
       if (data) {
         setHost(data.host || "");
         setPort(String(data.port || "587"));
@@ -1043,7 +1044,9 @@ function UsersPanel({ currentUserId }: { currentUserId: string }) {
   const load = async () => {
     setLoading(true);
     try {
-      const data = await list();
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token ?? '';
+  const data = await (list as any)({ data: { __token: token } });
       setUsers(data as AdminUser[]);
     } catch (e: any) {
       toast.error(e.message ?? "Failed to load users");
@@ -1057,8 +1060,9 @@ function UsersPanel({ currentUserId }: { currentUserId: string }) {
   const changeRole = async (userId: string, role: "admin" | "operator" | "none") => {
     setBusyId(userId);
     try {
-      await setRole({ data: { userId, role } });
-      toast.success(role === "none" ? "Access revoked" : `Set as ${role}`);
+  const { data: { session: s1 } } = await supabase.auth.getSession();
+  await (setRole as any)({ data: { userId, role, __token: s1?.access_token ?? '' } });
+    toast.success(role === "none" ? "Access revoked" : `Set as ${role}`);
       await load();
     } catch (e: any) {
       toast.error(e.message ?? "Failed");
@@ -1071,7 +1075,8 @@ function UsersPanel({ currentUserId }: { currentUserId: string }) {
     if (!confirm(`Permanently delete ${email}? This cannot be undone.`)) return;
     setBusyId(userId);
     try {
-      await del({ data: { userId } });
+      const { data: { session: s2 } } = await supabase.auth.getSession();
+await (del as any)({ data: { userId, __token: s2?.access_token ?? '' } });
       toast.success("User deleted");
       await load();
     } catch (e: any) {
