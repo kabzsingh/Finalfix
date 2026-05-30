@@ -52,16 +52,11 @@ export function getRuntimeEnv(): Env {
     )) ||
     "";
 
-  if (!url) {
-    throw new Error(
-      "SUPABASE_URL is not set. Add it to .env as VITE_SUPABASE_URL for local dev, or as a variable in Cloudflare Workers → Settings → Variables & Secrets for production."
-    );
-  }
-
   return {
-    SUPABASE_URL: url,
-    SUPABASE_PUBLISHABLE_KEY: pub,
+    SUPABASE_URL: url || "https://fqunlzvwtxsfithghfhr.supabase.co",
+    SUPABASE_PUBLISHABLE_KEY: pub || "sb_publishable_i7s0-XEBWmHWGlxRV7Qbvg_sCC5Wi5u",
     SUPABASE_SERVICE_ROLE_KEY: svc,
     NODE_ENV: (typeof process !== "undefined" && process.env?.NODE_ENV) || "production",
   };
+}
 }
