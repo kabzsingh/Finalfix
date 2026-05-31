@@ -261,7 +261,8 @@ export const Route = createFileRoute("/api/public/hooks/send-reports")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const env = process.env as unknown as Env;
+        const { getRuntimeEnv } = await import("@/lib/runtime-env");
+        const env = getRuntimeEnv();
         const db = getSupabaseAdmin(env);
 
         const url = new URL(request.url);
