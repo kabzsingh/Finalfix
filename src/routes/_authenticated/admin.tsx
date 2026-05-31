@@ -701,6 +701,8 @@ function ReportSettings({ site, onSaved }: { site: Site; onSaved: () => void }) 
   const sendTest = async () => {
     setSending(true);
     try {
+      // Clear previous log so test always sends
+      await supabase.from("report_send_log").delete().eq("site_id", site.id);
       const res = await fetch(`/api/public/hooks/send-reports?force=${site.id}`, { method: "POST" });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "Network error");
