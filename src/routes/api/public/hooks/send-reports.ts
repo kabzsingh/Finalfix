@@ -243,4 +243,7 @@ export const Route = createFileRoute("/api/public/hooks/send-reports")({
         }
         return Response.json({ ok: true, processed: out });
       },
-      GET: async () => Response.json({ o
+      GET: async () => Response.json({ ok: true, hint: "POST to trigger" }),
+    },
+  },
+});
