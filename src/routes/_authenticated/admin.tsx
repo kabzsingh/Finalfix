@@ -406,12 +406,14 @@ function SmtpSettingsPanel() {
     }
     setSaving(true);
     try {
-      await update({
-        data: {
-          host, port: Number(port), user_email: userEmail, password,
-          from_name: fromName, from_email: fromEmail, encryption: encryption as "tls" | "ssl" | "none",
-        },
-      });
+      const { data: { session: smtpSession } } = await supabase.auth.getSession();
+      await (update as any)({
+       data: {
+        host, port: Number(port), user_email: userEmail, password,
+        from_name: fromName, from_email: fromEmail, encryption: encryption as "tls" | "ssl" | "none",
+         __token: smtpSession?.access_token ?? '',
+  },
+});
       toast.success("Mail server settings updated");
     } catch (e: any) {
       toast.error(e.message ?? "Failed to save SMTP settings");
