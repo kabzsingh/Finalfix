@@ -30,7 +30,7 @@ export function getRuntimeEnv(): Env {
       (import.meta as any).env?.SUPABASE_URL ||
       (import.meta as any).env?.VITE_SUPABASE_URL
     )) ||
-    "";
+    "https://fqunlzvwtxsfithghfhr.supabase.co";
 
   const pub =
     (typeof process !== "undefined" && (
@@ -41,7 +41,7 @@ export function getRuntimeEnv(): Env {
       (import.meta as any).env?.SUPABASE_PUBLISHABLE_KEY ||
       (import.meta as any).env?.VITE_SUPABASE_PUBLISHABLE_KEY
     )) ||
-    "";
+    "sb_publishable_i7s0-XEBWmHWGlxRV7Qbvg_sCC5Wi5u";
 
   const svc =
     (typeof process !== "undefined" && (
