@@ -11,32 +11,33 @@ async function sendEmail(
   subject: string,
   text: string,
   attachment: { filename: string; mime: string; content: string },
-  resendApiKey: string,
+  sendgridApiKey: string,
   fromEmail: string,
   fromName: string,
 ) {
-  const res = await fetch("https://api.resend.com/emails", {
+  const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${resendApiKey}`,
+      "Authorization": `Bearer ${sendgridApiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: `${fromName} <${fromEmail}>`,
-      to,
+      from: { email: fromEmail, name: fromName },
+      personalizations: [{ to: to.map((email) => ({ email })) }],
       subject,
-      text,
+      content: [{ type: "text/plain", value: text }],
       attachments: [
         {
           filename: attachment.filename,
           content: btoa(attachment.content),
+          type: attachment.mime,
         },
       ],
     }),
   });
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`Resend API error: ${err}`);
+    throw new Error(`SendGrid error: ${err}`);
   }
 }
 
@@ -174,7 +175,7 @@ async function buildMonthlyReport(db: Client, site: any, meters: any[]) {
   };
 }
 
-async function processSite(db: Client, site: any, resendApiKey: string) {
+async function processSite(db: Client, site: any, sendgridApiKey: string) {
   const tz = site.timezone || "UTC";
   const local = nowInTz(tz);
   if (local.hour !== site.report_hour) return { site: site.name, skipped: "hour-mismatch" };
@@ -183,14 +184,14 @@ async function processSite(db: Client, site: any, resendApiKey: string) {
   const { data: meters, error: mErr } = await db.from("site_meters").select("*").eq("site_id", site.id).order("position");
   if (mErr) throw new Error(mErr.message);
   const results: any[] = [];
-  const fromEmail = "onboarding@resend.dev";
+  const fromEmail = "autowashges@gmail.com";
   const fromName = "WashGrid Reports";
   if (site.daily_report_enabled) {
     const r = await buildDailyReport(db, site, meters ?? []);
     const { error: dupErr } = await db.from("report_send_log").insert({ site_id: site.id, report_type: "daily", period_key: r.periodKey, recipients });
     if (!dupErr) {
       try {
-        await sendEmail(recipients, r.subject, r.text, r.attachment, resendApiKey, fromEmail, fromName);
+        await sendEmail(recipients, r.subject, r.text, r.attachment, sendgridApiKey, fromEmail, fromName);
         results.push({ type: "daily", period: r.periodKey, ok: true });
       } catch (e: any) {
         results.push({ type: "daily", period: r.periodKey, ok: false, error: e.message });
@@ -204,7 +205,7 @@ async function processSite(db: Client, site: any, resendApiKey: string) {
     const { error: dupErr } = await db.from("report_send_log").insert({ site_id: site.id, report_type: "monthly", period_key: r.periodKey, recipients });
     if (!dupErr) {
       try {
-        await sendEmail(recipients, r.subject, r.text, r.attachment, resendApiKey, fromEmail, fromName);
+        await sendEmail(recipients, r.subject, r.text, r.attachment, sendgridApiKey, fromEmail, fromName);
         results.push({ type: "monthly", period: r.periodKey, ok: true });
       } catch (e: any) {
         results.push({ type: "monthly", period: r.periodKey, ok: false, error: e.message });
@@ -222,7 +223,8 @@ export const Route = createFileRoute("/api/public/hooks/send-reports")({
       POST: async ({ request }) => {
         const env = getRuntimeEnv();
         const db = getSupabaseAdmin(env);
-        const resendApiKey = (env as any).RESEND_API_KEY || "re_4tjw3sNy_79oRXJRQt9ska2dd8AA79rDE";
+        const sendgridApiKey = (env as any).SENDGRID_API_KEY;
+        if (!sendgridApiKey) return Response.json({ error: "SENDGRID_API_KEY is not set" }, { status: 500 });
         const url = new URL(request.url);
         const force = url.searchParams.get("force");
         const { data: sites, error } = await db.from("sites").select("*");
@@ -234,7 +236,7 @@ export const Route = createFileRoute("/api/public/hooks/send-reports")({
             const r = await processSite(
               db,
               force ? { ...site, report_hour: nowInTz(site.timezone || "UTC").hour } : site,
-              resendApiKey,
+              sendgridApiKey,
             );
             out.push(r);
           } catch (e: any) {
