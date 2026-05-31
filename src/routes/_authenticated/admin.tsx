@@ -241,7 +241,8 @@ scripts/setup-admin.sql`}
   const generateKey = useServerFn(createSiteApiKey);
   const handleGenKey = async (siteId: string) => {
     try {
-      const res = await generateKey({ data: { siteId, label: "ESP32" } });
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await generateKey({ data: { siteId, label: "ESP32", __token: session?.access_token ?? '' } } as any);
       setRevealedKey(res.apiKey);
       load();
     } catch (e: any) { toast.error(e.message ?? "Key generation failed"); }
