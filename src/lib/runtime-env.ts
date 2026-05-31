@@ -13,8 +13,14 @@ import type { Env } from "./supabase";
 let _runtimeEnv: Env | null = null;
 
 export function setRuntimeEnv(env: Env) {
-  _runtimeEnv = env;
+  _runtimeEnv = {
+    ...env,
+    SUPABASE_URL: env.SUPABASE_URL || "https://fqunlzvwtxsfithghfhr.supabase.co",
+    SUPABASE_PUBLISHABLE_KEY: env.SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_ANON_KEY || "sb_publishable_i7s0-XEBWmHWGlxRV7Qbvg_sCC5Wi5u",
+    SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_KEY || "",
+  };
 }
+
 
 export function getRuntimeEnv(): Env {
   if (_runtimeEnv) return _runtimeEnv;
