@@ -77,7 +77,6 @@ export default {
     const url = new URL(request.url);
 
     // ── Legacy API routes (Supabase) ─────────────────────────
-    // /api/public/* is handled by TanStack Start file routes (e.g. ingest, webhooks).
     if (url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/public/")) {
       return handleApiRequest(request, env as Env);
     }
@@ -89,6 +88,20 @@ export default {
     } catch (error) {
       console.error(error);
       return brandedErrorResponse();
+    }
+  },
+
+  async scheduled(_event: unknown, env: unknown, _ctx: unknown) {
+    setRuntimeEnv(env as Env);
+    const baseUrl = "https://dashboardwash.kabirsingh-cd1.workers.dev";
+    try {
+      const res = await fetch(`${baseUrl}/api/public/hooks/send-reports`, {
+        method: "POST",
+      });
+      const json = await res.json();
+      console.log("Cron send-reports:", JSON.stringify(json));
+    } catch (e) {
+      console.error("Cron failed:", e);
     }
   },
 };
