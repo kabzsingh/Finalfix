@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { getSupabaseAdmin, type Env } from "@/lib/supabase";
 import { getApiKeyByHash, getMetersForSite } from "@/lib/db";
+import { getRuntimeEnv } from "@/lib/runtime-env";
 import { z } from "zod";
 
 const PayloadSchema = z.object({
@@ -35,7 +36,7 @@ export const Route = createFileRoute("/api/public/ingest")({
     handlers: {
       OPTIONS: async () => new Response(null, { status: 204, headers: corsHeaders() }),
       POST: async ({ request }) => {
-        const env = process.env as unknown as Env;
+        const env = getRuntimeEnv() as unknown as Env;
 
         if (!env?.SUPABASE_URL || !env?.SUPABASE_SERVICE_ROLE_KEY) {
           return json({ error: "Server configuration missing" }, 500);
