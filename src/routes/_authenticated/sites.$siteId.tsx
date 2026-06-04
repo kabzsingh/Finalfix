@@ -4,20 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { ArrowLeft, Activity, Droplets, FlaskConical, Gauge, Pencil, Radio } from "lucide-react";
 import { StatCard } from "@/components/app/StatCard";
 import { MeterCard } from "@/components/app/MeterCard";
-
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  CartesianGrid,
-} from "recharts";
 
 export const Route = createFileRoute("/_authenticated/sites/$siteId")({
   component: SiteDetail,
@@ -49,10 +39,9 @@ interface LiveEntry {
   recorded_at: string;
 }
 
-// FIX 3: Track when each chemical meter went low and count washes since then
 interface ChemLowEvent {
   meter_id: string;
-  low_since: string; // ISO timestamp when it first went low
+  low_since: string;
 }
 
 function SiteDetail() {
@@ -64,10 +53,8 @@ function SiteDetail() {
   const [todays, setTodays] = useState<Record<string, number>>({});
   const [liveEntries, setLiveEntries] = useState<LiveEntry[]>([]);
   const [lastSeenTs, setLastSeenTs] = useState<string | null>(null);
-  // ESP32 connection: tracks last_used_at from site_api_keys (updated on every ingest)
   const [esp32LastSeen, setEsp32LastSeen] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  // FIX 3: Store when each chemical went low
   const [chemLowEvents, setChemLowEvents] = useState<ChemLowEvent[]>([]);
 
   const metersRef = useRef<Meter[]>([]);
@@ -89,7 +76,6 @@ function SiteDetail() {
       supabase.from("site_api_keys").select("last_used_at").eq("site_id", siteId).order("last_used_at", { ascending: false }).limit(1),
     ]);
     setSite(s as any);
-    // Update ESP32 last-seen from API key usage
     const keyLastUsed = (apiKeys as any)?.[0]?.last_used_at ?? null;
     setEsp32LastSeen(keyLastUsed);
     setMeters((m as any) ?? []);
@@ -105,11 +91,10 @@ function SiteDetail() {
     const rows = (r as any) ?? [];
     setReadings(rows);
 
-    // FIX 3: Find when each chemical meter went low (look back further for context)
+    // Find when each chemical meter went low
     const chemMeters = ((m as any) ?? []).filter((x: Meter) => x.meter_type === "chemical");
     const newLowEvents: ChemLowEvent[] = [];
     for (const cm of chemMeters) {
-      // Get last 200 readings for this chemical meter to find the low transition
       const { data: chemReadings } = await supabase
         .from("readings")
         .select("value,recorded_at")
@@ -121,20 +106,18 @@ function SiteDetail() {
       const latest = cr[0];
       const isLow = Number(latest.value) >= 1;
       if (!isLow) continue;
-      // Walk backwards to find the first "low" reading in this continuous low run
       let lowSince = latest.recorded_at;
       for (let i = 1; i < cr.length; i++) {
         if (Number(cr[i].value) >= 1) {
           lowSince = cr[i].recorded_at;
         } else {
-          break; // found an OK reading — stop here
+          break;
         }
       }
       newLowEvents.push({ meter_id: cm.id, low_since: lowSince });
     }
     setChemLowEvents(newLowEvents);
 
-    // Seed live feed
     const seedMeters: Meter[] = (m as any) ?? [];
     const meterMap = new Map(seedMeters.map((x) => [x.id, x]));
     const seed = [...rows]
@@ -189,7 +172,6 @@ function SiteDetail() {
     }, ...prev].slice(0, 20));
 
     setLastSeenTs((prev) => (!prev || ts > prev) ? ts : prev);
-    // Also update ESP32 last-seen so the Live badge reacts instantly to new data
     setEsp32LastSeen((prev) => (!prev || ts > prev) ? ts : prev);
 
     setReadings((prev) => {
@@ -206,17 +188,14 @@ function SiteDetail() {
       setTotals((prev) => ({ ...prev, [row.meter_id]: (prev[row.meter_id] ?? 0) + val }));
     }
 
-    // FIX 3: When chemical state changes, update chemLowEvents
     if (meter.meter_type === "chemical") {
       const isNowLow = val >= 1;
       setChemLowEvents((prev) => {
         const exists = prev.find((e) => e.meter_id === row.meter_id);
         if (isNowLow && !exists) {
-          // Just went low — record the timestamp
           return [...prev, { meter_id: row.meter_id, low_since: ts }];
         }
         if (!isNowLow && exists) {
-          // Chemical refilled — remove the low event
           return prev.filter((e) => e.meter_id !== row.meter_id);
         }
         return prev;
@@ -285,55 +264,8 @@ function SiteDetail() {
     return Array.from(groups.values());
   }, [chemicalLevelMeters, chemicalFlowMeters]);
 
-  const washChart = useMemo(() => {
-    const buckets: Record<string, number> = {};
-    const n = new Date();
-    for (let i = 23; i >= 0; i--) {
-      const d = new Date(n.getTime() - i * 60 * 60_000);
-      d.setMinutes(0, 0, 0);
-      buckets[d.toISOString()] = 0;
-    }
-    const washIds = new Set(washMeters.map((m) => m.id));
-    for (const r of readings) {
-      if (!washIds.has(r.meter_id)) continue;
-      const d = new Date(r.recorded_at);
-      d.setMinutes(0, 0, 0);
-      const k = d.toISOString();
-      if (k in buckets) buckets[k] += Number(r.value);
-    }
-    return Object.entries(buckets).map(([k, v]) => ({
-      time: new Date(k).toLocaleTimeString([], { hour: "2-digit" }),
-      washes: v,
-    }));
-  }, [readings, washMeters]);
-
-  const freshChart = useMemo(() => {
-    const buckets: Record<string, number> = {};
-    const n = new Date();
-    for (let i = 23; i >= 0; i--) {
-      const d = new Date(n.getTime() - i * 60 * 60_000);
-      d.setMinutes(0, 0, 0);
-      buckets[d.toISOString()] = 0;
-    }
-    const ids = new Set(freshMeters.map((m) => m.id));
-    for (const r of readings) {
-      if (!ids.has(r.meter_id)) continue;
-      const d = new Date(r.recorded_at);
-      d.setMinutes(0, 0, 0);
-      const k = d.toISOString();
-      if (k in buckets) buckets[k] += Number(r.value);
-    }
-    return Object.entries(buckets).map(([k, v]) => ({
-      time: new Date(k).toLocaleTimeString([], { hour: "2-digit" }),
-      liters: v,
-    }));
-  }, [readings, freshMeters]);
-
   if (!site) return <div className="text-muted-foreground">Loading…</div>;
 
-  // Use esp32LastSeen (API key last_used_at) as primary online signal — updated on every
-  // ingest call from the ESP32, even if no readings change. Falls back to last reading ts.
-  // Online = ESP32 contacted the server within the last 90 seconds.
   const bestTs = [esp32LastSeen, lastSeenTs].filter(Boolean).sort().reverse()[0] ?? null;
   const ago = bestTs ? Math.max(0, Math.floor((now - new Date(bestTs).getTime()) / 1000)) : null;
   const isOnline = ago !== null && ago < 90;
@@ -368,78 +300,53 @@ function SiteDetail() {
         </div>
       </div>
 
-      {/* FIX 2: Stat cards now use totals/todays directly from RPCs — same source as MeterCards */}
+      {/* Stat cards — wash and water with today + lifetime */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard icon={Gauge} label="Wash today" value={stats.washToday.toLocaleString()} />
         <StatCard icon={Activity} label="Wash total" value={stats.washLifetime.toLocaleString()} />
-        <StatCard icon={Droplets} label="Fresh water today" value={`${stats.freshToday.toFixed(1)} L`} />
-        <StatCard
-          icon={FlaskConical}
-          label="Chemicals low"
-          tone={
-            chemicalLevelMeters.some((m) => {
-              const last = stats.latestByMeter.get(m.id);
-              return last && Number(last.value) >= 1;
-            })
-              ? "danger"
-              : "success"
-          }
-          value={`${chemicalLevelMeters.filter((m) => {
-            const last = stats.latestByMeter.get(m.id);
-            return last && Number(last.value) >= 1;
-          }).length} / ${chemicalLevelMeters.length}`}
-        />
+        <StatCard icon={Droplets} label="Water today" value={`${stats.freshToday.toFixed(1)} L`} />
+        <StatCard icon={Droplets} label="Water total" value={`${stats.freshLifetime.toFixed(1)} L`} />
       </div>
 
       {washMeters.length > 0 || freshMeters.length > 0 ? (
         <div>
           <h2 className="text-lg font-semibold mb-4">Water Meters</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {washMeters.map((m) => {
-              const last = stats.latestByMeter.get(m.id);
-              return (
-                <div key={m.id} className="space-y-2">
-                  <MeterCard
-                    name={m.name}
-                    meterType="wash"
-                    value={last ? Number(last.value) : 0}
-                    unit={m.unit}
-                    capacity={m.capacity}
-                    lowThreshold={m.low_threshold}
-                    today={todays[m.id] ?? 0}
-                    total={totals[m.id] ?? 0}
-                  />
-                  <AdminAdjust meterId={m.id} siteId={siteId} unit={m.unit} onSaved={load} />
-                </div>
-              );
-            })}
-            {freshMeters.map((m) => {
-              const last = stats.latestByMeter.get(m.id);
-              return (
-                <div key={m.id} className="space-y-2">
-                  <MeterCard
-                    name={m.name}
-                    meterType="fresh_water"
-                    value={last ? Number(last.value) : 0}
-                    unit={m.unit}
-                    capacity={m.capacity}
-                    lowThreshold={m.low_threshold}
-                    today={todays[m.id] ?? 0}
-                    total={totals[m.id] ?? 0}
-                  />
-                  <AdminAdjust meterId={m.id} siteId={siteId} unit={m.unit} onSaved={load} />
-                </div>
-              );
-            })}
+            {washMeters.map((m) => (
+              <div key={m.id} className="space-y-2">
+                <MeterCard
+                  name={m.name}
+                  meterType="wash"
+                  value={todays[m.id] ?? 0}
+                  unit={m.unit}
+                  capacity={m.capacity}
+                  lowThreshold={m.low_threshold}
+                  today={todays[m.id] ?? 0}
+                  total={totals[m.id] ?? 0}
+                />
+                <AdminAdjust meterId={m.id} siteId={siteId} unit={m.unit} onSaved={load} />
+              </div>
+            ))}
+            {freshMeters.map((m) => (
+              <div key={m.id} className="space-y-2">
+                <MeterCard
+                  name={m.name}
+                  meterType="fresh_water"
+                  value={todays[m.id] ?? 0}
+                  unit={m.unit}
+                  capacity={m.capacity}
+                  lowThreshold={m.low_threshold}
+                  today={todays[m.id] ?? 0}
+                  total={totals[m.id] ?? 0}
+                />
+                <AdminAdjust meterId={m.id} siteId={siteId} unit={m.unit} onSaved={load} />
+              </div>
+            ))}
           </div>
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ChartCard title="Wash count (last 24h)" data={washChart} dataKey="washes" stroke="var(--color-chart-1)" />
-        <ChartCard title="Fresh water L (last 24h)" data={freshChart} dataKey="liters" stroke="var(--color-chart-2)" />
-      </div>
-
+      {/* Chemical levels */}
       <div>
         <h2 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">Chemical levels</h2>
         {chemicalGroups.length === 0 ? (
@@ -454,7 +361,6 @@ function SiteDetail() {
               const flwTotal = flw ? totals[flw.id] ?? 0 : 0;
               const perWash = flw && stats.washToday > 0 ? flwToday / stats.washToday : null;
 
-              // FIX 3: Use chemLowEvents to count washes since chemical went low
               let isLow = false;
               let washesSinceLow: number | null = null;
               let lowSinceLabel: string | null = null;
@@ -464,7 +370,6 @@ function SiteDetail() {
                 isLow = !!lowEvent;
 
                 if (isLow && lowEvent) {
-                  // Count all wash readings after the low_since timestamp
                   washesSinceLow = readings
                     .filter((r) => {
                       const wm = meterById.get(r.meter_id);
@@ -472,7 +377,6 @@ function SiteDetail() {
                     })
                     .reduce((s, r) => s + Number(r.value), 0);
 
-                  // Human-readable label for when it went low
                   const lowDelta = Math.floor((now - new Date(lowEvent.low_since).getTime()) / 1000);
                   lowSinceLabel = lowDelta < 60 ? "just now"
                     : lowDelta < 3600 ? `${Math.floor(lowDelta / 60)}m ago`
@@ -656,42 +560,6 @@ function AdminAdjust({
       >
         ×
       </Button>
-    </div>
-  );
-}
-
-function ChartCard({
-  title,
-  data,
-  dataKey,
-  stroke,
-}: {
-  title: string;
-  data: any[];
-  dataKey: string;
-  stroke: string;
-}) {
-  return (
-    <div className="rounded-xl border border-border bg-card p-4 shadow-card">
-      <h3 className="text-sm font-medium mb-3">{title}</h3>
-      <div className="h-56">
-        <ResponsiveContainer>
-          <LineChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-            <XAxis dataKey="time" tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} stroke="var(--color-border)" />
-            <YAxis tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} stroke="var(--color-border)" />
-            <Tooltip
-              contentStyle={{
-                background: "var(--color-popover)",
-                border: "1px solid var(--color-border)",
-                borderRadius: 8,
-                fontSize: 12,
-              }}
-            />
-            <Line type="monotone" dataKey={dataKey} stroke={stroke} strokeWidth={2} dot={false} />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
     </div>
   );
 }
