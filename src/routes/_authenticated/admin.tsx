@@ -780,7 +780,6 @@ function buildEsp32Sketch(site: Site, meters: Meter[]) {
   const endpoint = `${typeof window !== "undefined" ? window.location.origin : "https://your-deployment-url.com"}/api/public/ingest`;
   const safeKey = (k: string) => k.replace(/[^a-zA-Z0-9]/g, "_");
 
-  // Available GPIOs (safe input pins on ESP32 DevKit; avoid 0, 2, 6-11, 12, 34-39 for digital input use here).
   const PINS = [4, 5, 13, 14, 15, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33];
   const pulseMeters = meters.filter((m) => m.meter_type === "wash" || m.meter_type === "fresh_water" || m.meter_type === "chemical_flow");
   const levelMeters = meters.filter((m) => m.meter_type === "chemical");
@@ -798,9 +797,7 @@ function buildEsp32Sketch(site: Site, meters: Meter[]) {
     )
     .join("\n");
 
-  // ---------------- Pulse counter declarations ----------------
-  // Per-type debounce: relays/contactors bounce longer than hall-effect flow sensors.
-  const debounceFor = (t: Meter["meter_type"]) => (t === "wash" ? 50 : 25);
+  const debounceFor = (t: Meter["meter_type"]) => (t === "wash" ? 500 : 25);
 
   const pulseDecls = pulseMeters
     .map((m) => {
@@ -812,7 +809,7 @@ volatile uint32_t pulses_${k} = 0;
 volatile uint32_t lastEdge_${k} = 0;
 void IRAM_ATTR isr_${k}() {
   uint32_t now = millis();
-  if (now - lastEdge_${k} >= DEBOUNCE_${k}_MS) {  // reject ghost signals / contact bounce
+  if (now - lastEdge_${k} >= DEBOUNCE_${k}_MS) {
     lastEdge_${k} = now;
     pulses_${k}++;
   }
@@ -829,14 +826,13 @@ void IRAM_ATTR isr_${k}() {
     })
     .join("\n");
 
-  // ---------------- Chemical level state ----------------
   const levelDecls = levelMeters
     .map((m) => {
       const k = safeKey(m.device_key);
       return `uint8_t state_${k} = 0;
 uint32_t stableSince_${k} = 0;
 uint8_t lastRaw_${k} = 0;
-uint8_t reportedState_${k} = 255; // force first report`;
+uint8_t reportedState_${k} = 255;`;
     })
     .join("\n");
 
@@ -851,7 +847,6 @@ uint8_t reportedState_${k} = 255; // force first report`;
     .map((m) => {
       const a = assigned.find((x) => x.kind === "level" && x.m === m)!;
       const k = safeKey(m.device_key);
-      // INPUT_PULLUP: HIGH = open (full/ok) → state 0; LOW = closed (chemical low) → state 1.
       return `  {
     uint8_t raw = (digitalRead(${a.pin}) == LOW) ? 1 : 0;
     if (raw != lastRaw_${k}) { lastRaw_${k} = raw; stableSince_${k} = millis(); }
@@ -862,68 +857,109 @@ uint8_t reportedState_${k} = 255; // force first report`;
     })
     .join("\n");
 
-  // ---------------- Payload assembly ----------------
-  // For pulse meters: snapshot & reset counters atomically; convert to value per meter type.
-  const payloadParts: string[] = [];
-  pulseMeters.forEach((m) => {
-    const k = safeKey(m.device_key);
-    const conv =
-      m.meter_type === "wash"
-        ? `(float)p` // 1 pulse = 1 wash
-        : `((float)p / 2.0f)`; // 2 pulses = 1 litre
-    payloadParts.push(`  {
-    noInterrupts(); uint32_t p = pulses_${k}; pulses_${k} = 0; interrupts();
-    float v = ${conv};
-    if (!first) payload += ",";
-    payload += "{\\"device_key\\":\\"${m.device_key}\\",\\"value\\":" + String(v, 3) + "}";
-    first = false;
-  }`);
-  });
-  levelMeters.forEach((m) => {
-    const k = safeKey(m.device_key);
-    // Always report level state so the dashboard reflects current condition.
-    payloadParts.push(`  {
-    float v = (float)state_${k};
-    if (!first) payload += ",";
-    payload += "{\\"device_key\\":\\"${m.device_key}\\",\\"value\\":" + String(v, 0) + "}";
-    first = false;
-    reportedState_${k} = state_${k};
-  }`);
-  });
+  // Snapshot struct fields for pulse meters
+  const snapshotPulseFields = pulseMeters
+    .map((m) => `  uint32_t p_${safeKey(m.device_key)};`)
+    .join("\n");
 
-  const payloadBuild = payloadParts.join("\n") || `  // no meters configured`;
+  // Snapshot struct fields for level meters
+  const snapshotLevelFields = levelMeters
+    .map((m) => `  uint8_t s_${safeKey(m.device_key)};`)
+    .join("\n");
+
+  // appendToQueue printf args
+  const appendArgs = [
+    ...pulseMeters.map((m) => `p_${safeKey(m.device_key)}`),
+    ...levelMeters.map((m) => `s_${safeKey(m.device_key)}`),
+  ].join(", ");
+
+  // appendToQueue format string fields
+  const appendFmt = [
+    ...pulseMeters.map((m) => `\\"p_${safeKey(m.device_key)}\\":%u`),
+    ...levelMeters.map((m) => `\\"s_${safeKey(m.device_key)}\\":%u`),
+  ].join(",");
+
+  // Capture snapshot
+  const captureNoInt = pulseMeters
+    .map((m) => `  uint32_t p_${safeKey(m.device_key)} = pulses_${safeKey(m.device_key)};`)
+    .join("\n");
+
+  const hasDataCheck = [
+    ...pulseMeters.map((m) => `p_${safeKey(m.device_key)} > 0`),
+    ...levelMeters.map((m) => `state_${safeKey(m.device_key)} != reportedState_${safeKey(m.device_key)}`),
+  ].join(" ||\n                 ") || "false";
+
+  const snapshotAssignPulse = pulseMeters
+    .map((m) => `  s.p_${safeKey(m.device_key)} = p_${safeKey(m.device_key)};`)
+    .join("\n");
+
+  const snapshotAssignLevel = levelMeters
+    .map((m) => `  s.s_${safeKey(m.device_key)} = state_${safeKey(m.device_key)};`)
+    .join("\n");
+
+  const clearPulses = pulseMeters
+    .map((m) => `  pulses_${safeKey(m.device_key)} -= p_${safeKey(m.device_key)};`)
+    .join("\n");
+
+  const clearReported = levelMeters
+    .map((m) => `  reportedState_${safeKey(m.device_key)} = state_${safeKey(m.device_key)};`)
+    .join("\n");
+
+  // Flush payload build
+  const flushPayloadParts = [
+    ...pulseMeters.map((m) => {
+      const k = safeKey(m.device_key);
+      const conv = m.meter_type === "wash" ? `(float)doc["p_${k}"]` : `(float)(uint32_t)doc["p_${k}"] / 2.0f`;
+      return `    float v_${k} = ${conv};
+    payload += ",{\\"device_key\\":\\"${m.device_key}\\",\\"value\\":" + String(v_${k}, 3) + "}";`;
+    }),
+    ...levelMeters.map((m) => {
+      const k = safeKey(m.device_key);
+      return `    payload += ",{\\"device_key\\":\\"${m.device_key}\\",\\"value\\":" + String((uint8_t)doc["s_${k}"]) + "}";`;
+    }),
+  ].join("\n");
+
+  const levelChangedChecks = levelMeters
+    .map((m) => `  if (state_${safeKey(m.device_key)} != reportedState_${safeKey(m.device_key)}) levelChanged = true;`)
+    .join("\n") || "  // (no level inputs)";
 
   return `// Auto-generated for site: ${site.name}
 // Endpoint: ${endpoint}
 //
 // === BEFORE FLASHING ===
-//   1. Set WIFI_SSID, WIFI_PASS, SITE_API_KEY below.
-//   2. Wire sensors to the GPIO pins listed under WIRING.
+//   1. Install ArduinoJson library (v6.x) via Tools > Manage Libraries
+//   2. Set WIFI_SSID, WIFI_PASS, SITE_API_KEY below.
+//   3. Wire sensors to the GPIO pins listed under WIRING.
+//
+// === OFFLINE BUFFERING ===
+//   Readings are saved to SPIFFS flash storage when WiFi is down.
+//   Data survives power cuts and reboots. Up to 5000 snapshots (~3 days).
+//   All buffered data is sent automatically when WiFi reconnects.
 //
 // === RULES ===
 //   • Water/flow meters: 2 pulses = 1 litre  (handled in firmware).
 //   • Wash counters:     1 pulse  = 1 wash    (handled in firmware).
 //   • Chemical level switch: Normally Open when tank is FULL/OK,
 //                            Normally Closed when chemical is LOW.
-//   • Pulse debounce: wash inputs 50 ms (relay/contactor),
-//                     water & flow 25 ms (hall-effect sensors).
-//   • Chemical-low transitions are pushed immediately (event-driven),
-//     so the dashboard shows the alert within ~1 second.
 //
 // === WIRING ===
 ${wiringComment || "//   (no meters configured)"}
 
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <SPIFFS.h>
+#include <ArduinoJson.h>
 
 const char* WIFI_SSID    = "YOUR_WIFI_SSID";
 const char* WIFI_PASS    = "YOUR_WIFI_PASSWORD";
 const char* SITE_API_KEY = "ws_live_xxx_paste_from_admin_panel";
 const char* INGEST_URL   = "${endpoint}";
+const char* QUEUE_FILE   = "/queue.jsonl";
 
-const unsigned long SEND_INTERVAL_MS  = 15UL * 1000UL; // periodic upload (also fires immediately on chemical state change)
-const unsigned long MIN_PUSH_GAP_MS   = 2UL  * 1000UL; // throttle event-driven pushes
-const uint32_t      LEVEL_DEBOUNCE_MS = 250;           // chemical switch debounce
+const unsigned long SEND_INTERVAL_MS  = 15UL * 1000UL;
+const unsigned long MIN_PUSH_GAP_MS   = 2UL  * 1000UL;
+const uint32_t      LEVEL_DEBOUNCE_MS = 250;
+const int           MAX_FILE_LINES    = 5000;
 
 unsigned long lastSendMs = 0;
 
@@ -933,38 +969,110 @@ ${pulseDecls || "// (no pulse meters)"}
 // ===== Chemical level switches (debounced polling) =====
 ${levelDecls || "// (no chemical level meters)"}
 
+// ===== SPIFFS helpers =====
+void appendToQueue(${pulseMeters.map((m) => `uint32_t p_${safeKey(m.device_key)}`).join(", ")}${pulseMeters.length && levelMeters.length ? ", " : ""}${levelMeters.map((m) => `uint8_t s_${safeKey(m.device_key)}`).join(", ")}) {
+  File f = SPIFFS.open(QUEUE_FILE, FILE_APPEND);
+  if (!f) { Serial.println("Failed to open queue"); return; }
+  f.printf("{${appendFmt}}\\n", ${appendArgs});
+  f.close();
+}
+
+int countQueueLines() {
+  File f = SPIFFS.open(QUEUE_FILE, FILE_READ);
+  if (!f) return 0;
+  int c = 0;
+  while (f.available()) { f.readStringUntil('\\n'); c++; }
+  f.close();
+  return c;
+}
+
+void removeFirstLines(int n) {
+  File src = SPIFFS.open(QUEUE_FILE, FILE_READ);
+  File tmp = SPIFFS.open("/tmp.jsonl", FILE_WRITE);
+  if (!src || !tmp) return;
+  int skipped = 0;
+  while (src.available()) {
+    String line = src.readStringUntil('\\n');
+    if (skipped < n) { skipped++; continue; }
+    if (line.length() > 0) tmp.println(line);
+  }
+  src.close(); tmp.close();
+  SPIFFS.remove(QUEUE_FILE);
+  SPIFFS.rename("/tmp.jsonl", QUEUE_FILE);
+}
+
 void connectWifi() {
+  if (WiFi.status() == WL_CONNECTED) return;
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   Serial.print("Connecting WiFi");
   unsigned long t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 20000) {
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) {
     delay(500); Serial.print(".");
   }
   Serial.println(WiFi.status() == WL_CONNECTED ? " OK" : " FAIL");
 }
 
-void sendReadings() {
-  if (WiFi.status() != WL_CONNECTED) connectWifi();
-  if (WiFi.status() != WL_CONNECTED) return;
+void flushQueue() {
+  File f = SPIFFS.open(QUEUE_FILE, FILE_READ);
+  if (!f || f.size() == 0) { if (f) f.close(); return; }
+  int sent = 0;
+  while (f.available()) {
+    String line = f.readStringUntil('\\n');
+    line.trim();
+    if (line.length() == 0) continue;
+    StaticJsonDocument<512> doc;
+    if (deserializeJson(doc, line)) continue;
+    String payload = "{\\"readings\\":[{\\"device_key\\":\\"_dummy\\",\\"value\\":0}";
+${flushPayloadParts}
+    payload += "]}";
+    // Remove dummy
+    payload.replace(",{\\"device_key\\":\\"_dummy\\",\\"value\\":0}", "");
+    payload.replace("{\\"device_key\\":\\"_dummy\\",\\"value\\":0},", "");
+    payload.replace("{\\"device_key\\":\\"_dummy\\",\\"value\\":0}", "");
+    if (WiFi.status() != WL_CONNECTED) connectWifi();
+    if (WiFi.status() != WL_CONNECTED) break;
+    HTTPClient http;
+    http.begin(INGEST_URL);
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("x-site-api-key", SITE_API_KEY);
+    int code = http.POST(payload);
+    http.end();
+    if (code == 200) { sent++; }
+    else { Serial.printf("Send failed (%d)\\n", code); break; }
+  }
+  f.close();
+  if (sent > 0) {
+    Serial.printf("Flushed %d records\\n", sent);
+    removeFirstLines(sent);
+  }
+}
 
-  String payload = "{\\"readings\\":[";
-  bool first = true;
-${payloadBuild}
-  payload += "]}";
-
-  HTTPClient http;
-  http.begin(INGEST_URL);
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("x-site-api-key", SITE_API_KEY);
-  int code = http.POST(payload);
-  Serial.printf("POST %d -> %s\\n", code, http.getString().c_str());
-  http.end();
+void captureAndQueue() {
+  noInterrupts();
+${captureNoInt}
+  interrupts();
+  bool hasData = ${hasDataCheck};
+  if (!hasData) return;
+  if (countQueueLines() >= MAX_FILE_LINES) removeFirstLines(100);
+  struct Snap {
+${snapshotPulseFields}
+${snapshotLevelFields}
+  } s;
+${snapshotAssignPulse}
+${snapshotAssignLevel}
+  appendToQueue(${appendArgs.replace(/p_|s_/g, "s.")});
+  noInterrupts();
+${clearPulses}
+  interrupts();
+${clearReported}
 }
 
 void setup() {
   Serial.begin(115200);
   delay(500);
+  if (!SPIFFS.begin(true)) Serial.println("SPIFFS mount failed!");
+  else Serial.printf("SPIFFS OK — %u bytes free\\n", SPIFFS.totalBytes() - SPIFFS.usedBytes());
 
   // Configure pulse inputs + ISRs
 ${pulseAttach || "  // (no pulse inputs)"}
@@ -976,27 +1084,23 @@ ${levelPins || "  // (no level inputs)"}
 }
 
 void loop() {
-  // Debounced level sampling (state machine)
+  // Debounced level sampling
 ${levelSample || "  // (no level inputs)"}
 
-  // Push immediately on chemical state change (rate-limited).
   bool levelChanged = false;
-${levelMeters
-  .map((m) => {
-    const k = safeKey(m.device_key);
-    return `  if (state_${k} != reportedState_${k}) levelChanged = true;`;
-  })
-  .join("\n") || "  // (no level inputs)"}
+${levelChangedChecks}
   unsigned long now = millis();
   if ((levelChanged && (now - lastSendMs) >= MIN_PUSH_GAP_MS) ||
       (now - lastSendMs) >= SEND_INTERVAL_MS) {
     lastSendMs = now;
-    sendReadings();
+    captureAndQueue();
+    flushQueue();
   }
   delay(10);
 }
 `;
 }
+
 
 function EspSketchDialog({ site, meters, onClose }: { site: Site | null; meters: Meter[]; onClose: () => void }) {
   const code = site ? buildEsp32Sketch(site, meters) : "";
