@@ -1061,7 +1061,10 @@ ${snapshotLevelFields}
   } s;
 ${snapshotAssignPulse}
 ${snapshotAssignLevel}
-  appendToQueue(${appendArgs.replace(/p_|s_/g, "s.")});
+  appendToQueue(${[
+  ...pulseMeters.map((m) => `s.p_${safeKey(m.device_key)}`),
+  ...levelMeters.map((m) => `s.s_${safeKey(m.device_key)}`),
+].join(", ")});
   noInterrupts();
 ${clearPulses}
   interrupts();
