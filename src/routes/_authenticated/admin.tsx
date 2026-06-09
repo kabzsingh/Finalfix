@@ -15,9 +15,9 @@ import { toast } from "sonner";
 import { createSiteApiKey, grantAdminBootstrap, seedDemoData, getSmtpSettings, updateSmtpSettings, listAllUsers, setUserRole, deleteUser } from "@/lib/admin.functions";
 import { Copy, Plus, Trash2, KeyRound, Sparkles, Cpu, Mail, Send, Server, ShieldCheck, Loader2, AlertTriangle, Users, UserCheck, UserX, Building2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
-
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { ThemeSettingsPanel, SiteBackgroundUploader } from "@/components/app/ThemeSettings";
 export const Route = createFileRoute("/_authenticated/admin")({ component: AdminPage });
 
 interface Site {
@@ -27,6 +27,7 @@ interface Site {
   report_recipients?: string[];
   daily_report_enabled?: boolean;
   monthly_report_enabled?: boolean;
+  background_url?: string | null;
 }
 interface Meter { id: string; site_id: string; meter_type: "wash"|"fresh_water"|"chemical"|"chemical_flow"; name: string; unit: string; capacity: number | null; low_threshold: number | null; device_key: string; position: number; chemical_group: string | null }
 interface ApiKeyRow { id: string; site_id: string; key_prefix: string; label: string | null; revoked: boolean; last_used_at: string | null; created_at: string }
@@ -143,7 +144,6 @@ const res = await bootstrapServer({ data: { __token: token } } as any);
           Your account (<strong>{user?.email}</strong>) does not have administrator privileges on project
           <code className="mx-1 px-1.5 py-0.5 rounded bg-muted text-xs font-mono">{projectRef || "unknown"}</code>.
         </p>
-
         {needsDbSetup && (
           <div className="mt-6 p-4 text-left rounded-lg border border-amber-500/20 bg-amber-500/5">
             <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-semibold text-sm mb-2">
@@ -277,6 +277,8 @@ scripts/setup-admin.sql`}
       <UsersPanel currentUserId={user?.id ?? ""} />
 
       <SmtpSettingsPanel />
+
+      <ThemeSettingsPanel />
 
       <section className="space-y-4">
         <h2 className="text-xl font-semibold flex items-center gap-2">
@@ -603,7 +605,6 @@ function SiteAdminCard({
                 <Input className="h-8 text-xs" placeholder="20" type="number" value={low} onChange={(e) => setLow(e.target.value)} />
               </div>
             </div>
-
             <div className="mt-3 flex flex-col md:flex-row gap-3 items-end">
               {(type === "chemical" || type === "chemical_flow") && (
                 <div className="flex-1 space-y-1 w-full">
@@ -668,6 +669,15 @@ function SiteAdminCard({
 
         <div className="pt-4 border-t border-border/60">
           <ReportSettings site={site} onSaved={() => { /* parent will refetch on next mount */ }} />
+        </div>
+
+        <div className="pt-4 border-t border-border/60">
+          <SiteBackgroundUploader
+            siteId={site.id}
+            siteName={site.name}
+            currentUrl={site.background_url ?? null}
+            onSaved={() => {}}
+          />
         </div>
       </div>
     </div>
@@ -783,7 +793,6 @@ function buildEsp32Sketch(site: Site, meters: Meter[]) {
   const PINS = [4, 5, 13, 14, 15, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33];
   const pulseMeters = meters.filter((m) => m.meter_type === "wash" || m.meter_type === "fresh_water" || m.meter_type === "chemical_flow");
   const levelMeters = meters.filter((m) => m.meter_type === "chemical");
-
   const assigned: { m: Meter; pin: number; kind: "pulse" | "level" }[] = [];
   let pinIdx = 0;
   for (const m of pulseMeters) assigned.push({ m, pin: PINS[pinIdx++ % PINS.length], kind: "pulse" });
@@ -825,7 +834,6 @@ void IRAM_ATTR isr_${k}() {
   attachInterrupt(digitalPinToInterrupt(${a.pin}), isr_${k}, FALLING);`;
     })
     .join("\n");
-
   const levelDecls = levelMeters
     .map((m) => {
       const k = safeKey(m.device_key);
@@ -888,7 +896,6 @@ uint8_t reportedState_${k} = 255;`;
     ...pulseMeters.map((m) => `p_${safeKey(m.device_key)} > 0`),
     ...levelMeters.map((m) => `state_${safeKey(m.device_key)} != reportedState_${safeKey(m.device_key)}`),
   ].join(" ||\n                 ") || "false";
-
   const snapshotAssignPulse = pulseMeters
     .map((m) => `  s.p_${safeKey(m.device_key)} = p_${safeKey(m.device_key)};`)
     .join("\n");
@@ -1182,7 +1189,6 @@ function UsersPanel({ currentUserId }: { currentUserId: string }) {
       setBusyId(null);
     }
   };
-
   const removeUser = async (userId: string, email: string) => {
     if (!confirm(`Permanently delete ${email}? This cannot be undone.`)) return;
     setBusyId(userId);
@@ -1433,5 +1439,3 @@ function SiteAccessDialog({
     </Dialog>
   );
 }
-
-
