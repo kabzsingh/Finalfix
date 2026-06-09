@@ -39,6 +39,7 @@ function AdminPage() {
   const nav = useNavigate();
   const bootstrapServer = useServerFn(grantAdminBootstrap);
   const seed = useServerFn(seedDemoData);
+
   const [sites, setSites] = useState<Site[]>([]);
   const [meters, setMeters] = useState<Meter[]>([]);
   const [keys, setKeys] = useState<ApiKeyRow[]>([]);
@@ -710,6 +711,7 @@ function ReportSettings({ site, onSaved }: { site: Site; onSaved: () => void }) 
       toast.error(e.message ?? "Failed to send test report");
     } finally { setSending(false); }
   };
+
   return (
     <div className="rounded-xl border border-border/50 bg-primary/5 p-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
@@ -814,6 +816,7 @@ void IRAM_ATTR isr_${k}() {
 }`;
     })
     .join("\n\n");
+
   const pulseAttach = pulseMeters
     .map((m) => {
       const a = assigned.find((x) => x.kind === "pulse" && x.m === m)!;
@@ -897,6 +900,7 @@ uint8_t reportedState_${k} = 255;`;
   const clearPulses = pulseMeters
     .map((m) => `  pulses_${safeKey(m.device_key)} -= p_${safeKey(m.device_key)};`)
     .join("\n");
+
   const clearReported = levelMeters
     .map((m) => `  reportedState_${safeKey(m.device_key)} = state_${safeKey(m.device_key)};`)
     .join("\n");
@@ -1043,6 +1047,7 @@ ${flushPayloadParts}
     removeFirstLines(sent);
   }
 }
+
 void captureAndQueue() {
   noInterrupts();
 ${captureNoInt}
@@ -1084,6 +1089,7 @@ ${levelPins || "  // (no level inputs)"}
 void loop() {
   // Debounced level sampling
 ${levelSample || "  // (no level inputs)"}
+
   bool levelChanged = false;
 ${levelChangedChecks}
   unsigned long now = millis();
@@ -1146,6 +1152,7 @@ function UsersPanel({ currentUserId }: { currentUserId: string }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+
   const load = async () => {
     setLoading(true);
     try {
@@ -1426,3 +1433,5 @@ function SiteAccessDialog({
     </Dialog>
   );
 }
+
+
