@@ -122,6 +122,23 @@ useEffect(() => { dayBaselineRef.current = dayBaseline; }, [dayBaseline]);
       newLowEvents.push({ meter_id: cm.id, low_since: lowSince });
     }
     setChemLowEvents(newLowEvents);
+    // Find how many washes had occurred when each chemical went low
+const washMeter = ((m as any) ?? []).find((x: Meter) => x.meter_type === "wash");
+const newWashAtLow: Record<string, number> = {};
+if (washMeter) {
+  for (const evt of newLowEvents) {
+    const { data: wNearLow } = await supabase
+      .from("readings")
+      .select("value")
+      .eq("meter_id", washMeter.id)
+      .lte("recorded_at", evt.low_since)
+      .order("recorded_at", { ascending: false })
+      .limit(1);
+    const wVal = (wNearLow as any)?.[0]?.value;
+    if (wVal !== undefined) newWashAtLow[evt.meter_id] = Number(wVal);
+  }
+}
+setWashAtLow(newWashAtLow);
 
     const seedMeters: Meter[] = (m as any) ?? [];
     const meterMap = new Map(seedMeters.map((x) => [x.id, x]));
