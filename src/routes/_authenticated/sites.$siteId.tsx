@@ -228,22 +228,12 @@ setDayBaseline(newBaseline);
     if (isToday && (meter.meter_type === "wash" || meter.meter_type === "fresh_water" || meter.meter_type === "chemical_flow")) {
       setTodays((prev) => ({ ...prev, [row.meter_id]: (prev[row.meter_id] ?? 0) + val }));
     }
-    if (meter.meter_type === "wash" || meter.meter_type === "fresh_water" || meter.meter_type === "chemical_flow") {
-      setTotals((prev) => ({ ...prev, [row.meter_id]: (prev[row.meter_id] ?? 0) + val }));
-    }
-
-    if (meter.meter_type === "chemical") {
-      const isNowLow = val >= 1;
-      setChemLowEvents((prev) => {
-        const exists = prev.find((e) => e.meter_id === row.meter_id);
-        if (isNowLow && !exists) {
-          return [...prev, { meter_id: row.meter_id, low_since: ts }];
-        }
-        if (!isNowLow && exists) {
-          return prev.filter((e) => e.meter_id !== row.meter_id);
-        }
-        return prev;
-      });
+    if (meter.meter_type === "wash" || meter.meter_type === "fresh_water") {
+  // Absolute counters: total IS the latest reading — never add, just take max
+  setTotals((prev) => ({ ...prev, [row.meter_id]: Math.max(prev[row.meter_id] ?? 0, val) }));
+} else if (meter.meter_type === "chemical_flow") {
+  setTotals((prev) => ({ ...prev, [row.meter_id]: (prev[row.meter_id] ?? 0) + val }));
+}
       setTimeout(load, 150);
     }
   };
