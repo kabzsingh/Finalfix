@@ -143,10 +143,32 @@ useEffect(() => { dayBaselineRef.current = dayBaseline; }, [dayBaseline]);
     setLiveEntries(seed);
     if (rows.length > 0) setLastSeenTs(rows[rows.length - 1].recorded_at);
 
-    const { data: tot } = await supabase.rpc("meter_totals", { _site_id: siteId });
-    const totMap: Record<string, number> = {};
-    for (const row of (tot as any[]) ?? []) totMap[row.meter_id] = Number(row.total) || 0;
-    setTotals(totMap);
+    // Use meter_today: MAX(since midnight) − last value before midnight
+const { data: td } = await supabase.rpc("meter_today", {
+  _site_id: siteId,
+  _since: startOfDay.toISOString(),
+});
+const tdMap: Record<string, number> = {};
+for (const row of (td as any[]) ?? []) tdMap[row.meter_id] = Number(row.today) || 0;
+setTodays(tdMap);
+
+// Fetch day-start baseline per absolute-counter meter (for realtime updates)
+const absMeters = ((m as any) ?? []).filter(
+  (x: Meter) => x.meter_type === "wash" || x.meter_type === "fresh_water"
+);
+const newBaseline: Record<string, number> = {};
+for (const am of absMeters) {
+  const { data: br } = await supabase
+    .from("readings")
+    .select("value")
+    .eq("meter_id", am.id)
+    .lt("recorded_at", startOfDay.toISOString())
+    .order("recorded_at", { ascending: false })
+    .limit(1);
+  const bv = (br as any)?.[0]?.value;
+  if (bv !== undefined) newBaseline[am.id] = Number(bv);
+}
+setDayBaseline(newBaseline);
 
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
