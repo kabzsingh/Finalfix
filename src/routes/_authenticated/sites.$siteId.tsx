@@ -56,6 +56,11 @@ function SiteDetail() {
   const [esp32LastSeen, setEsp32LastSeen] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [chemLowEvents, setChemLowEvents] = useState<ChemLowEvent[]>([]);
+  // ADD these two new state lines + ref just below chemLowEvents:
+const [dayBaseline, setDayBaseline] = useState<Record<string, number>>({});
+const [washAtLow, setWashAtLow] = useState<Record<string, number>>({});
+const dayBaselineRef = useRef<Record<string, number>>({});
+useEffect(() => { dayBaselineRef.current = dayBaseline; }, [dayBaseline]);
 
   const metersRef = useRef<Meter[]>([]);
   useEffect(() => { metersRef.current = meters; }, [meters]);
