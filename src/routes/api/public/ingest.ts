@@ -8,6 +8,7 @@ const PayloadSchema = z.object({
   readings: z.array(z.object({
     device_key: z.string().min(1).max(64),
     value: z.number().finite(),
+    type: z.enum(['total', 'today', 'level', 'event']).default('total').optional(),
     recorded_at: z.string().datetime().optional(),
   })).min(1).max(200),
 });
@@ -69,31 +70,71 @@ export const Route = createFileRoute("/api/public/ingest")({
         if (!parsed.success) return json({ error: "Invalid payload", issues: parsed.error.flatten() }, 400);
 
         const meters = await getMetersForSite(db, keyRow.site_id);
-        const map = new Map(meters.map((m) => [m.device_key, m.id]));
+        const map = new Map(meters.map((m) => [m.device_key, { id: m.id, type: m.meter_type }]));
 
-        const rows: any[] = [];
+        // ===== NEW: Process readings by type =====
+        const readings: any[] = [];
+        const chemicalEvents: any[] = [];
         const unknown: string[] = [];
+
         for (const r of parsed.data.readings) {
-          const meterId = map.get(r.device_key);
-          if (!meterId) { unknown.push(r.device_key); continue; }
-          rows.push({
+          const meterInfo = map.get(r.device_key);
+          if (!meterInfo) { 
+            unknown.push(r.device_key); 
+            continue; 
+          }
+
+          if (r.type === 'event') {
+            // Handle chemical event (low/topped up)
+            // Example value: 1 means event occurred, 0 means no event
+            if (r.value === 1) {
+              chemicalEvents.push({
+                device_key: r.device_key,
+                meter_id: meterInfo.id,
+                site_id: keyRow.site_id,
+                recorded_at: r.recorded_at || new Date().toISOString(),
+              });
+            }
+            continue;
+          }
+
+          // Regular reading (total, today, level)
+          readings.push({
             site_id: keyRow.site_id,
-            meter_id: meterId,
+            meter_id: meterInfo.id,
             value: r.value,
+            reading_type: r.type || 'total',
             ...(r.recorded_at ? { recorded_at: r.recorded_at } : {}),
           });
         }
 
-        if (rows.length === 0) return json({ error: "No matching meters", unknown }, 400);
+        if (readings.length === 0 && chemicalEvents.length === 0) {
+          return json({ error: "No matching meters", unknown }, 400);
+        }
 
-        const { error: insErr } = await db.from("readings").insert(rows);
-        if (insErr) return json({ error: insErr.message }, 500);
+        // Insert readings
+        if (readings.length > 0) {
+          const { error: insErr } = await db.from("readings").insert(readings);
+          if (insErr) return json({ error: insErr.message }, 500);
+        }
+
+        // Process chemical events
+        // TODO: Implement chemical event tracking based on ESP32 data
+        if (chemicalEvents.length > 0) {
+          console.log(`Received ${chemicalEvents.length} chemical events`);
+          // Will implement in next step
+        }
 
         await db.from("site_api_keys")
           .update({ last_used_at: new Date().toISOString() })
           .eq("key_hash", hash);
 
-        return json({ ok: true, accepted: rows.length, unknown });
+        return json({ 
+          ok: true, 
+          accepted: readings.length, 
+          chemical_events: chemicalEvents.length,
+          unknown 
+        });
       },
     },
   },
