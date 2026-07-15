@@ -93,7 +93,7 @@ export default {
 
   async scheduled(_event: unknown, env: unknown, _ctx: unknown) {
     setRuntimeEnv(env as Env);
-    const baseUrl = "https://dashboardwash.kabirsingh-cd1.workers.dev";
+    const baseUrl = "https://finalfix.kabirsingh-cd1.workers.dev";
     try {
       const res = await fetch(`${baseUrl}/api/public/hooks/send-reports`, {
         method: "POST",
