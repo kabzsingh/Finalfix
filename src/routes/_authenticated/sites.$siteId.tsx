@@ -225,9 +225,18 @@ setDayBaseline(newBaseline);
 
     const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
     const isToday = new Date(ts) >= startOfDay;
-    if (isToday && (meter.meter_type === "wash" || meter.meter_type === "fresh_water" || meter.meter_type === "chemical_flow")) {
-      setTodays((prev) => ({ ...prev, [row.meter_id]: (prev[row.meter_id] ?? 0) + val }));
-    }
+    if (isToday) {
+  if (meter.meter_type === "wash" || meter.meter_type === "fresh_water") {
+    // today = current absolute reading minus what it was at midnight
+    const baseline = dayBaselineRef.current[row.meter_id] ?? 0;
+    setTodays((prev) => ({
+      ...prev,
+      [row.meter_id]: Math.max(0, val - baseline),
+    }));
+  } else if (meter.meter_type === "chemical_flow") {
+    setTodays((prev) => ({ ...prev, [row.meter_id]: (prev[row.meter_id] ?? 0) + val }));
+  }
+}
     if (meter.meter_type === "wash" || meter.meter_type === "fresh_water") {
   // Absolute counters: total IS the latest reading — never add, just take max
   setTotals((prev) => ({ ...prev, [row.meter_id]: Math.max(prev[row.meter_id] ?? 0, val) }));
