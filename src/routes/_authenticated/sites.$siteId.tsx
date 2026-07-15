@@ -57,10 +57,10 @@ function SiteDetail() {
   const [now, setNow] = useState(() => Date.now());
   const [chemLowEvents, setChemLowEvents] = useState<ChemLowEvent[]>([]);
   // ADD these two new state lines + ref just below chemLowEvents:
-const [dayBaseline, setDayBaseline] = useState<Record<string, number>>({});
-const [washAtLow, setWashAtLow] = useState<Record<string, number>>({});
-const dayBaselineRef = useRef<Record<string, number>>({});
-useEffect(() => { dayBaselineRef.current = dayBaseline; }, [dayBaseline]);
+ const [dayBaseline, setDayBaseline] = useState<Record<string, number>>({});
+ const [washAtLow, setWashAtLow] = useState<Record<string, number>>({});
+ const dayBaselineRef = useRef<Record<string, number>>({});
+ useEffect(() => { dayBaselineRef.current = dayBaseline; }, [dayBaseline]);
 
   const metersRef = useRef<Meter[]>([]);
   useEffect(() => { metersRef.current = meters; }, [meters]);
@@ -86,6 +86,9 @@ useEffect(() => { dayBaselineRef.current = dayBaseline; }, [dayBaseline]);
     setMeters((m as any) ?? []);
 
     const since = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
++    // startOfDay is needed for several queries below — compute it once up-front
++    const startOfDay = new Date();
++    startOfDay.setHours(0, 0, 0, 0);
     const { data: r } = await supabase
       .from("readings")
       .select("meter_id,value,recorded_at")
@@ -123,22 +126,22 @@ useEffect(() => { dayBaselineRef.current = dayBaseline; }, [dayBaseline]);
     }
     setChemLowEvents(newLowEvents);
     // Find how many washes had occurred when each chemical went low
-const washMeter = ((m as any) ?? []).find((x: Meter) => x.meter_type === "wash");
-const newWashAtLow: Record<string, number> = {};
-if (washMeter) {
-  for (const evt of newLowEvents) {
-    const { data: wNearLow } = await supabase
-      .from("readings")
-      .select("value")
-      .eq("meter_id", washMeter.id)
-      .lte("recorded_at", evt.low_since)
-      .order("recorded_at", { ascending: false })
-      .limit(1);
-    const wVal = (wNearLow as any)?.[0]?.value;
-    if (wVal !== undefined) newWashAtLow[evt.meter_id] = Number(wVal);
-  }
-}
-setWashAtLow(newWashAtLow);
+ const washMeter = ((m as any) ?? []).find((x: Meter) => x.meter_type === "wash");
+ const newWashAtLow: Record<string, number> = {};
+ if (washMeter) {
+   for (const evt of newLowEvents) {
+     const { data: wNearLow } = await supabase
+       .from("readings")
+       .select("value")
+       .eq("meter_id", washMeter.id)
+       .lte("recorded_at", evt.low_since)
+       .order("recorded_at", { ascending: false })
+       .limit(1);
+     const wVal = (wNearLow as any)?.[0]?.value;
+     if (wVal !== undefined) newWashAtLow[evt.meter_id] = Number(wVal);
+   }
+ }
+ setWashAtLow(newWashAtLow);
 
     const seedMeters: Meter[] = (m as any) ?? [];
     const meterMap = new Map(seedMeters.map((x) => [x.id, x]));
@@ -160,42 +163,41 @@ setWashAtLow(newWashAtLow);
     setLiveEntries(seed);
     if (rows.length > 0) setLastSeenTs(rows[rows.length - 1].recorded_at);
 
-    // Use meter_today: MAX(since midnight) − last value before midnight
-const { data: td } = await supabase.rpc("meter_today", {
-  _site_id: siteId,
-  _since: startOfDay.toISOString(),
-});
-const tdMap: Record<string, number> = {};
-for (const row of (td as any[]) ?? []) tdMap[row.meter_id] = Number(row.today) || 0;
-setTodays(tdMap);
+    // Fetch day-start baseline per absolute-counter meter (for realtime updates)
+    const absMeters = ((m as any) ?? []).filter(
+      (x: Meter) => x.meter_type === "wash" || x.meter_type === "fresh_water"
+    );
+    const newBaseline: Record<string, number> = {};
+    for (const am of absMeters) {
+      const { data: br } = await supabase
+        .from("readings")
+        .select("value")
+        .eq("meter_id", am.id)
+        .lt("recorded_at", startOfDay.toISOString())
+        .order("recorded_at", { ascending: false })
+        .limit(1);
+      const bv = (br as any)?.[0]?.value;
+      if (bv !== undefined) newBaseline[am.id] = Number(bv);
+    }
+    setDayBaseline(newBaseline);
 
-// Fetch day-start baseline per absolute-counter meter (for realtime updates)
-const absMeters = ((m as any) ?? []).filter(
-  (x: Meter) => x.meter_type === "wash" || x.meter_type === "fresh_water"
-);
-const newBaseline: Record<string, number> = {};
-for (const am of absMeters) {
-  const { data: br } = await supabase
-    .from("readings")
-    .select("value")
-    .eq("meter_id", am.id)
-    .lt("recorded_at", startOfDay.toISOString())
-    .order("recorded_at", { ascending: false })
-    .limit(1);
-  const bv = (br as any)?.[0]?.value;
-  if (bv !== undefined) newBaseline[am.id] = Number(bv);
-}
-setDayBaseline(newBaseline);
-
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const { data: td } = await supabase.rpc("meter_totals_since", {
-      _site_id: siteId,
-      _since: startOfDay.toISOString(),
-    });
-    const tdMap: Record<string, number> = {};
-    for (const row of (td as any[]) ?? []) tdMap[row.meter_id] = Number(row.total) || 0;
-    setTodays(tdMap);
+-    const startOfDay = new Date();
+-    startOfDay.setHours(0, 0, 0, 0);
+-    const { data: td } = await supabase.rpc("meter_totals_since", {
+-      _site_id: siteId,
+-      _since: startOfDay.toISOString(),
+-    });
+-    const tdMap: Record<string, number> = {};
+-    for (const row of (td as any[]) ?? []) tdMap[row.meter_id] = Number(row.total) || 0;
+-    setTodays(tdMap);
++    // Compute today's totals since midnight
++    const { data: totals } = await supabase.rpc("meter_totals_since", {
++      _site_id: siteId,
++      _since: startOfDay.toISOString(),
++    });
++    const totalsMap: Record<string, number> = {};
++    for (const row of (totals as any[]) ?? []) totalsMap[row.meter_id] = Number(row.total) || 0;
++    setTodays(totalsMap);
   };
 
   const applyRealtimeRow = (row: { meter_id: string; value: number; recorded_at: string }) => {
@@ -236,7 +238,7 @@ setDayBaseline(newBaseline);
   } else if (meter.meter_type === "chemical_flow") {
     setTodays((prev) => ({ ...prev, [row.meter_id]: (prev[row.meter_id] ?? 0) + val }));
   }
-}
+ }
     if (meter.meter_type === "wash" || meter.meter_type === "fresh_water") {
   // Absolute counters: total IS the latest reading — never add, just take max
   setTotals((prev) => ({ ...prev, [row.meter_id]: Math.max(prev[row.meter_id] ?? 0, val) }));
