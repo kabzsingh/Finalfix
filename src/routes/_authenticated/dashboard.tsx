@@ -98,37 +98,99 @@ function DashboardPage() {
         const washMeterIds = (meters as any[]).filter((m) => m.meter_type === "wash").map((m) => m.id);
         const freshMeterIds = (meters as any[]).filter((m) => m.meter_type === "fresh_water").map((m) => m.id);
 
-        if (washMeterIds.length > 0) {
-          const { data: wt } = await supabase
-            .from("readings").select("value")
-            .in("meter_id", washMeterIds)
-            .gte("recorded_at", startOfDay.toISOString());
-          washToday = (wt ?? []).reduce((a, r) => a + Number(r.value), 0);
-          const { data: wlt } = await supabase
-            .from("readings").select("value")
-            .in("meter_id", washMeterIds);
-          washTotal = (wlt ?? []).reduce((a, r) => a + Number(r.value), 0);
-        }
-        if (freshMeterIds.length > 0) {
-          const { data: ft } = await supabase
-            .from("readings").select("value")
-            .in("meter_id", freshMeterIds)
-            .gte("recorded_at", startOfDay.toISOString());
-          freshToday = (ft ?? []).reduce((a, r) => a + Number(r.value), 0);
-        }
-      }
+       / Efficient queries that DON'T snowball
+import { SupabaseClient } from "@supabase/supabase-js";
 
-      return {
-        id: s.id, name: s.name, location: s.location,
-        wash_today: washToday, wash_total: washTotal,
-        fresh_today: freshToday,
-        chemicals_low: chemLow, chemicals_total: chemTotal,
-        last_seen: lastSeen,
-      };
-    }));
+export async function getLatestReadingsForSite(
+  supabase: SupabaseClient,
+  siteId: string
+) {
+  // NEW: Use the function we created in database
+  const { data, error } = await supabase.rpc(
+    "get_latest_readings_for_site",
+    { p_site_id: siteId }
+  );
+  
+  if (error) throw error;
+  return data || [];
+}
 
-    setSites(overviews);
+export async function getTodayAndTotalForMeter(
+  supabase: SupabaseClient,
+  meterDeviceKey: string,
+  siteId: string
+) {
+  // Get both total and today readings for a meter
+  const { data, error } = await supabase
+    .from("readings")
+    .select("value, reading_type, recorded_at")
+    .eq("site_id", siteId)
+    .eq("meter_id", meterDeviceKey)
+    .in("reading_type", ["total", "today"])
+    .order("recorded_at", { ascending: false })
+    .limit(2);  // Only need 2 (one total, one today)
+  
+  if (error) throw error;
+  
+  const result = {
+    total: 0,
+    today: 0,
+    totalReadAt: null as string | null,
+    todayReadAt: null as string | null,
   };
+  
+  for (const row of data || []) {
+    if (row.reading_type === "total" && result.total === 0) {
+      result.total = Number(row.value);
+      result.totalReadAt = row.recorded_at;
+    }
+    if (row.reading_type === "today" && result.today === 0) {
+      result.today = Number(row.value);
+      result.todayReadAt = row.recorded_at;
+    }
+  }
+  
+  return result;
+}
+
+export async function getChemicalEvents(
+  supabase: SupabaseClient,
+  siteId: string,
+  limit: number = 50
+) {
+  const { data, error } = await supabase.rpc(
+    "get_chemical_events",
+    { p_site_id: siteId, p_limit: limit }
+  );
+  
+  if (error) throw error;
+  return data || [];
+}
+
+export async function getChemicalCurrentStatus(
+  supabase: SupabaseClient,
+  siteId: string,
+  chemicalDeviceKey: string  // e.g., "0004", "0005", "0006"
+) {
+  // Get latest level reading for chemical
+  const { data, error } = await supabase
+    .from("readings")
+    .select("value, recorded_at")
+    .eq("site_id", siteId)
+    .eq("meter_id", chemicalDeviceKey)
+    .eq("reading_type", "level")
+    .order("recorded_at", { ascending: false })
+    .limit(1);
+  
+  if (error) throw error;
+  
+  const reading = data?.[0];
+  return {
+    is_low: reading?.value === 0,  // 0 = low, 1 = ok
+    level_value: reading?.value || 0,
+    last_read_at: reading?.recorded_at || null,
+  };
+}
 
   // Apply a new reading event to local state without re-fetching everything.
   const applyReading = (r: { meter_id: string; site_id: string; value: number; recorded_at: string }) => {
