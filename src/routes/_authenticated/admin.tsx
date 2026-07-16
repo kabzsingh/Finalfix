@@ -535,6 +535,64 @@ function SiteAdminCard({
   const [accentColor, setAccentColor] = useState(site.accent_color || "#f59e0b");
   const [logoUrl, setLogoUrl] = useState(site.logo_url || "");
   const [backgroundUrl, setBackgroundUrl] = useState(site.background_url || "");
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [backgroundUploading, setBackgroundUploading] = useState(false);
+
+  const handleLogoUpload = async (file: File) => {
+    if (!file) return;
+    setLogoUploading(true);
+    try {
+      const ext = file.name.split('.').pop() || 'png';
+      const fileName = `${site.id}-logo-${Date.now()}.${ext}`;
+      
+      // Upload to Supabase Storage
+      const { error: uploadErr } = await supabase.storage
+        .from('site-logos')
+        .upload(fileName, file, { upsert: true });
+      
+      if (uploadErr) throw uploadErr;
+      
+      // Get public URL
+      const { data } = supabase.storage
+        .from('site-logos')
+        .getPublicUrl(fileName);
+      
+      setLogoUrl(data.publicUrl);
+      toast.success("Logo uploaded");
+    } catch (e: any) {
+      toast.error(e.message || "Logo upload failed");
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
+  const handleBackgroundUpload = async (file: File) => {
+    if (!file) return;
+    setBackgroundUploading(true);
+    try {
+      const ext = file.name.split('.').pop() || 'jpg';
+      const fileName = `${site.id}-bg-${Date.now()}.${ext}`;
+      
+      // Upload to Supabase Storage
+      const { error: uploadErr } = await supabase.storage
+        .from('site-backgrounds')
+        .upload(fileName, file, { upsert: true });
+      
+      if (uploadErr) throw uploadErr;
+      
+      // Get public URL
+      const { data } = supabase.storage
+        .from('site-backgrounds')
+        .getPublicUrl(fileName);
+      
+      setBackgroundUrl(data.publicUrl);
+      toast.success("Background uploaded");
+    } catch (e: any) {
+      toast.error(e.message || "Background upload failed");
+    } finally {
+      setBackgroundUploading(false);
+    }
+  };
 
   return (
     <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden transition-all hover:shadow-md">
@@ -670,30 +728,69 @@ function SiteAdminCard({
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Logo and Background */}
+            {/* Logo Upload */}
             <div className="space-y-2">
-              <Label className="text-xs">Logo URL</Label>
-              <Input 
-                className="h-8 text-xs" 
-                placeholder="https://example.com/logo.png" 
-                value={logoUrl} 
-                onChange={(e) => setLogoUrl(e.target.value)} 
-              />
+              <Label className="text-xs">Logo</Label>
+              <div className="flex gap-2">
+                <label className="flex-1 cursor-pointer">
+                  <div className="h-8 px-3 py-1 rounded border border-border bg-background hover:bg-muted transition-colors flex items-center justify-center text-xs font-medium text-muted-foreground hover:text-foreground">
+                    {logoUploading ? "Uploading..." : "Choose File"}
+                  </div>
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    className="hidden" 
+                    onChange={(e) => {
+                      const file = e.currentTarget.files?.[0];
+                      if (file) handleLogoUpload(file);
+                    }}
+                    disabled={logoUploading}
+                  />
+                </label>
+              </div>
               {logoUrl && (
                 <div className="h-10 bg-muted rounded border border-border flex items-center px-2">
                   <img src={logoUrl} alt="logo preview" className="h-8 object-contain" />
                 </div>
               )}
+              {logoUrl && (
+                <Input 
+                  className="h-8 text-xs" 
+                  value={logoUrl} 
+                  readOnly
+                  placeholder="URL will appear here"
+                />
+              )}
             </div>
 
+            {/* Background Upload */}
             <div className="space-y-2">
-              <Label className="text-xs">Background URL</Label>
-              <Input 
-                className="h-8 text-xs" 
-                placeholder="https://example.com/bg.jpg" 
-                value={backgroundUrl} 
-                onChange={(e) => setBackgroundUrl(e.target.value)} 
-              />
+              <Label className="text-xs">Background</Label>
+              <div className="flex gap-2">
+                <label className="flex-1 cursor-pointer">
+                  <div className="h-8 px-3 py-1 rounded border border-border bg-background hover:bg-muted transition-colors flex items-center justify-center text-xs font-medium text-muted-foreground hover:text-foreground">
+                    {backgroundUploading ? "Uploading..." : "Choose File"}
+                  </div>
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    className="hidden" 
+                    onChange={(e) => {
+                      const file = e.currentTarget.files?.[0];
+                      if (file) handleBackgroundUpload(file);
+                    }}
+                    disabled={backgroundUploading}
+                  />
+                </label>
+              </div>
+              {backgroundUrl && (
+                <Input 
+                  className="h-8 text-xs" 
+                  value={backgroundUrl} 
+                  readOnly
+                  placeholder="URL will appear here"
+                />
+              )}
             </div>
 
             {/* Color Pickers */}
