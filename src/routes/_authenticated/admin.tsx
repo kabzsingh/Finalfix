@@ -27,6 +27,11 @@ interface Site {
   report_recipients?: string[];
   daily_report_enabled?: boolean;
   monthly_report_enabled?: boolean;
+  logo_url?: string | null;
+  background_url?: string | null;
+  primary_color?: string;
+  secondary_color?: string;
+  accent_color?: string;
 }
 interface Meter { id: string; site_id: string; meter_type: "wash"|"fresh_water"|"chemical"|"chemical_flow"; name: string; unit: string; capacity: number | null; low_threshold: number | null; device_key: string; position: number; chemical_group: string | null }
 interface ApiKeyRow { id: string; site_id: string; key_prefix: string; label: string | null; revoked: boolean; last_used_at: string | null; created_at: string }
@@ -239,6 +244,23 @@ scripts/setup-admin.sql`}
     toast.success("Meter removed");
   };
 
+  const updateBranding = async (siteId: string, branding: {
+    primary_color: string;
+    secondary_color: string;
+    accent_color: string;
+    logo_url: string | null;
+    background_url: string | null;
+  }) => {
+    const { error } = await supabase.from("sites").update(branding).eq("id", siteId);
+    if (error) {
+      toast.error(error.message);
+      return false;
+    }
+    load();
+    toast.success("Branding updated");
+    return true;
+  };
+
   const generateKey = useServerFn(createSiteApiKey);
   const handleGenKey = async (siteId: string) => {
     try {
@@ -317,6 +339,7 @@ scripts/setup-admin.sql`}
               onGenerateKey={() => handleGenKey(site.id)}
               onRevokeKey={revokeKey}
               onGenerateSketch={() => setSketchSite(site)}
+              onUpdateBranding={(branding) => updateBranding(site.id, branding)}
             />
           ))}
 
@@ -487,7 +510,7 @@ function SmtpSettingsPanel() {
 }
 
 function SiteAdminCard({
-  site, meters, keys, onRemoveSite, onAddMeter, onRemoveMeter, onGenerateKey, onRevokeKey, onGenerateSketch,
+  site, meters, keys, onRemoveSite, onAddMeter, onRemoveMeter, onGenerateKey, onRevokeKey, onGenerateSketch, onUpdateBranding,
 }: {
   site: Site; meters: Meter[]; keys: ApiKeyRow[];
   onRemoveSite: () => void;
@@ -496,6 +519,7 @@ function SiteAdminCard({
   onGenerateKey: () => void;
   onRevokeKey: (id: string) => void;
   onGenerateSketch: () => void;
+  onUpdateBranding: (branding: { primary_color: string; secondary_color: string; accent_color: string; logo_url: string | null; background_url: string | null }) => Promise<boolean>;
 }) {
   const [type, setType] = useState<Meter["meter_type"]>("chemical");
   const [name, setName] = useState("");
@@ -504,6 +528,13 @@ function SiteAdminCard({
   const [capacity, setCapacity] = useState("");
   const [low, setLow] = useState("");
   const [group, setGroup] = useState("");
+  
+  // Branding state
+  const [primaryColor, setPrimaryColor] = useState(site.primary_color || "#3b82f6");
+  const [secondaryColor, setSecondaryColor] = useState(site.secondary_color || "#10b981");
+  const [accentColor, setAccentColor] = useState(site.accent_color || "#f59e0b");
+  const [logoUrl, setLogoUrl] = useState(site.logo_url || "");
+  const [backgroundUrl, setBackgroundUrl] = useState(site.background_url || "");
 
   return (
     <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden transition-all hover:shadow-md">
@@ -631,6 +662,109 @@ function SiteAdminCard({
               ><Plus className="h-3.5 w-3.5 mr-1" /> Add Sensor</Button>
             </div>
           </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground/80">Site Branding</h4>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Logo and Background */}
+            <div className="space-y-2">
+              <Label className="text-xs">Logo URL</Label>
+              <Input 
+                className="h-8 text-xs" 
+                placeholder="https://example.com/logo.png" 
+                value={logoUrl} 
+                onChange={(e) => setLogoUrl(e.target.value)} 
+              />
+              {logoUrl && (
+                <div className="h-10 bg-muted rounded border border-border flex items-center px-2">
+                  <img src={logoUrl} alt="logo preview" className="h-8 object-contain" />
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs">Background URL</Label>
+              <Input 
+                className="h-8 text-xs" 
+                placeholder="https://example.com/bg.jpg" 
+                value={backgroundUrl} 
+                onChange={(e) => setBackgroundUrl(e.target.value)} 
+              />
+            </div>
+
+            {/* Color Pickers */}
+            <div className="space-y-2">
+              <Label className="text-xs">Primary Color</Label>
+              <div className="flex gap-2 items-center">
+                <input 
+                  type="color" 
+                  value={primaryColor} 
+                  onChange={(e) => setPrimaryColor(e.target.value)}
+                  className="h-8 w-12 rounded border border-border cursor-pointer"
+                />
+                <Input 
+                  className="h-8 text-xs flex-1" 
+                  value={primaryColor} 
+                  onChange={(e) => setPrimaryColor(e.target.value)}
+                  placeholder="#3b82f6"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs">Secondary Color</Label>
+              <div className="flex gap-2 items-center">
+                <input 
+                  type="color" 
+                  value={secondaryColor} 
+                  onChange={(e) => setSecondaryColor(e.target.value)}
+                  className="h-8 w-12 rounded border border-border cursor-pointer"
+                />
+                <Input 
+                  className="h-8 text-xs flex-1" 
+                  value={secondaryColor} 
+                  onChange={(e) => setSecondaryColor(e.target.value)}
+                  placeholder="#10b981"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs">Accent Color</Label>
+              <div className="flex gap-2 items-center">
+                <input 
+                  type="color" 
+                  value={accentColor} 
+                  onChange={(e) => setAccentColor(e.target.value)}
+                  className="h-8 w-12 rounded border border-border cursor-pointer"
+                />
+                <Input 
+                  className="h-8 text-xs flex-1" 
+                  value={accentColor} 
+                  onChange={(e) => setAccentColor(e.target.value)}
+                  placeholder="#f59e0b"
+                />
+              </div>
+            </div>
+          </div>
+
+          <Button
+            size="sm"
+            className="h-8 px-4 font-bold text-[11px] mt-4"
+            onClick={async () => {
+              await onUpdateBranding({
+                primary_color: primaryColor,
+                secondary_color: secondaryColor,
+                accent_color: accentColor,
+                logo_url: logoUrl || null,
+                background_url: backgroundUrl || null,
+              });
+            }}
+          >Save Branding</Button>
         </div>
 
         <div>

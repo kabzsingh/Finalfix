@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 export const Route = createFileRoute("/_authenticated/sites/$siteId")({
   component: SiteDetail,
@@ -59,6 +60,7 @@ function SiteDetail() {
   // ADD these two new state lines + ref just below chemLowEvents:
   const [dayBaseline, setDayBaseline] = useState<Record<string, number>>({});
   const [washAtLow, setWashAtLow] = useState<Record<string, number>>({});
+  const [washTrendData, setWashTrendData] = useState<{ time: string; washes: number }[]>([]);
   const dayBaselineRef = useRef<Record<string, number>>({});
   useEffect(() => { dayBaselineRef.current = dayBaseline; }, [dayBaseline]);
 
@@ -218,6 +220,24 @@ function SiteDetail() {
 
     setTodays(todaysMap);
     setTotals(totalsMap);
+
+    // Fetch wash trend data (last 7 days for chart)
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60_000).toISOString();
+    const washMeterForTrend = meters.find((m) => m.meter_type === "wash");
+    if (washMeterForTrend) {
+      const { data: washReadings } = await supabase
+        .from("readings")
+        .select("value,recorded_at")
+        .eq("meter_id", washMeterForTrend.id)
+        .gte("recorded_at", sevenDaysAgo)
+        .order("recorded_at", { ascending: true });
+      
+      const trendData = (washReadings ?? []).map((r: any) => ({
+        time: new Date(r.recorded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+        washes: Number(r.value),
+      }));
+      setWashTrendData(trendData);
+    }
   };
 
   const applyRealtimeRow = (row: { meter_id: string; value: number; recorded_at: string }) => {
@@ -371,6 +391,46 @@ function SiteDetail() {
         <StatCard icon={Droplets} label="Water today" value={`${stats.freshToday.toFixed(1)} L`} />
         <StatCard icon={Droplets} label="Water total" value={`${stats.freshLifetime.toFixed(1)} L`} />
       </div>
+
+      {/* Wash count trend chart */}
+      {washTrendData.length > 0 && (
+        <div className="rounded-xl border border-border bg-card shadow-card p-6">
+          <h2 className="text-lg font-semibold mb-4">Wash Trend (Last 7 Days)</h2>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={washTrendData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+              <XAxis 
+                dataKey="time" 
+                stroke="var(--color-muted-foreground)"
+                style={{ fontSize: '12px' }}
+                angle={-45}
+                textAnchor="end"
+                height={80}
+              />
+              <YAxis 
+                stroke="var(--color-muted-foreground)"
+                style={{ fontSize: '12px' }}
+              />
+              <Tooltip 
+                contentStyle={{
+                  backgroundColor: 'var(--color-background)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: '8px',
+                }}
+                labelStyle={{ color: 'var(--color-foreground)' }}
+              />
+              <Line 
+                type="monotone" 
+                dataKey="washes" 
+                stroke="var(--color-primary)" 
+                dot={false}
+                strokeWidth={2}
+                isAnimationActive={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       {washMeters.length > 1 || freshMeters.length > 1 ? (
         <div>
