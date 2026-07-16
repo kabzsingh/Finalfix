@@ -96,17 +96,16 @@ function DashboardPage() {
         const freshMeterIds = (meters as any[]).filter((m) => m.meter_type === "fresh_water").map((m) => m.id);
 
         // Fetch totals and today readings for wash meters
-        if (washMeterIds.length > 0) {
-          const { data: washReadings } = await supabase
-            .from("readings")
-            .select("meter_id,value,reading_type,recorded_at")
-            .in("meter_id", washMeterIds)
-            .in("reading_type", ["total", "today"]);
-          (washReadings ?? []).forEach((r: any) => {
-            if (r.reading_type === "total") washTotal += Number(r.value);
-            if (r.reading_type === "today" && new Date(r.recorded_at) >= startOfDay) washToday += Number(r.value);
-          });
-        }
+       (latest ?? []).forEach((r: any) => {
+  if (r.reading_type === "total" && r.device_key?.startsWith("0001")) {
+    washTotal = Number(r.value);
+  }
+  if (r.reading_type === "today" && r.device_key?.startsWith("0001")) {
+    washToday = Number(r.value);
+  }
+});
+
+const freshMeterIds = (meters as any[]).filter((m) => m.meter_type === "fresh_water").map((m) => m.id);
 
         // Fetch today readings for fresh water meters
         if (freshMeterIds.length > 0) {
