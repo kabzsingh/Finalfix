@@ -5,13 +5,24 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Download, FileDown } from "lucide-react";
+import { Download, FileDown, Beaker } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/reports")({ component: ReportsPage });
 
 interface Site { id: string; name: string }
-interface Meter { id: string; site_id: string; name: string; meter_type: "wash" | "fresh_water" | "chemical"; unit: string; device_key: string }
+interface Meter { id: string; site_id: string; name: string; meter_type: "wash" | "fresh_water" | "chemical" | "chemical_flow"; unit: string; device_key: string }
+interface ChemicalEvent {
+  id: string;
+  site_id: string;
+  meter_id: string;
+  meter_name?: string;
+  went_low_at: string;
+  topped_up_at: string | null;
+  wash_count_at_low: number | null;
+  wash_count_at_topup: number | null;
+  washes_during_low: number;
+}
 
 function ymd(d: Date) { return d.toISOString().slice(0, 10); }
 function ym(d: Date) { return d.toISOString().slice(0, 7); }
@@ -31,13 +42,37 @@ function downloadCsv(filename: string, csv: string) {
   URL.revokeObjectURL(url);
 }
 
+function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString();
+}
+
+function formatDuration(startIso: string, endIso: string | null): string {
+  if (!endIso) return "Still low";
+  const start = new Date(startIso).getTime();
+  const end = new Date(endIso).getTime();
+  const ms = end - start;
+  const hours = Math.floor(ms / (1000 * 60 * 60));
+  const mins = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+  return `${hours}h ${mins}m`;
+}
+
 function ReportsPage() {
   const [sites, setSites] = useState<Site[]>([]);
   const [siteId, setSiteId] = useState<string>("");
+  const [reportType, setReportType] = useState<"usage" | "chemical">("usage");
+  
+  // Usage report state
   const [period, setPeriod] = useState<"daily" | "monthly">("daily");
   const today = new Date();
   const [day, setDay] = useState<string>(ymd(today));
   const [month, setMonth] = useState<string>(ym(today));
+  
+  // Chemical report state
+  const [chemicalEvents, setChemicalEvents] = useState<ChemicalEvent[]>([]);
+  const [chemStartDate, setChemStartDate] = useState<string>(ymd(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)));
+  const [chemEndDate, setChemEndDate] = useState<string>(ymd(today));
+  
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -49,7 +84,48 @@ function ReportsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const generate = async () => {
+  // Fetch chemical events when site or dates change
+  useEffect(() => {
+    if (reportType !== "chemical" || !siteId) return;
+    loadChemicalEvents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [siteId, chemStartDate, chemEndDate, reportType]);
+
+  const loadChemicalEvents = async () => {
+    try {
+      const startDate = new Date(`${chemStartDate}T00:00:00`).toISOString();
+      const endDate = new Date(`${chemEndDate}T23:59:59`).toISOString();
+      
+      const { data, error } = await supabase
+        .from("chemical_low_events")
+        .select("id,site_id,meter_id,went_low_at,topped_up_at,wash_count_at_low,wash_count_at_topup,washes_during_low")
+        .eq("site_id", siteId)
+        .gte("went_low_at", startDate)
+        .lte("went_low_at", endDate)
+        .order("went_low_at", { ascending: false });
+      
+      if (error) throw error;
+      
+      // Fetch meter names
+      const { data: meters } = await supabase
+        .from("site_meters")
+        .select("id,name")
+        .eq("site_id", siteId);
+      
+      const meterMap = new Map((meters ?? []).map((m: any) => [m.id, m.name]));
+      
+      const eventsWithNames = (data ?? []).map((e: any) => ({
+        ...e,
+        meter_name: meterMap.get(e.meter_id) || "Unknown",
+      }));
+      
+      setChemicalEvents(eventsWithNames);
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to load chemical events");
+    }
+  };
+
+  const generateUsageReport = async () => {
     if (!siteId) return toast.error("Pick a site");
     setBusy(true);
     try {
@@ -171,55 +247,203 @@ function ReportsPage() {
     }
   };
 
+  const downloadChemicalReport = async () => {
+    if (!siteId || chemicalEvents.length === 0) {
+      toast.error("No chemical events to export");
+      return;
+    }
+    try {
+      const site = sites.find((s) => s.id === siteId)!;
+      const header = [
+        "Chemical",
+        "Went Low At",
+        "Topped Up At",
+        "Duration",
+        "Washes at Low",
+        "Washes at Top-up",
+        "Washes During Low",
+      ];
+      
+      const rows: (string | number)[][] = [header];
+      for (const evt of chemicalEvents) {
+        rows.push([
+          evt.meter_name || "Unknown",
+          formatDateTime(evt.went_low_at),
+          evt.topped_up_at ? formatDateTime(evt.topped_up_at) : "Still low",
+          formatDuration(evt.went_low_at, evt.topped_up_at),
+          evt.wash_count_at_low ?? "-",
+          evt.wash_count_at_topup ?? "-",
+          evt.washes_during_low,
+        ]);
+      }
+      
+      const safeName = site.name.replace(/[^a-z0-9]+/gi, "_");
+      downloadCsv(`${safeName}_chemical_events_${chemStartDate}_to_${chemEndDate}.csv`, toCsv(rows));
+      toast.success("Chemical report exported");
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to export report");
+    }
+  };
+
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Reports</h1>
-        <p className="text-sm text-muted-foreground">Export daily or monthly CSV reports per site.</p>
+        <p className="text-sm text-muted-foreground">View and export site usage and chemical events.</p>
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-5 shadow-card space-y-4">
-        <div className="space-y-1.5">
-          <Label>Site</Label>
-          <Select value={siteId} onValueChange={setSiteId}>
-            <SelectTrigger><SelectValue placeholder="Select a site" /></SelectTrigger>
-            <SelectContent>
-              {sites.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label>Period</Label>
-          <Select value={period} onValueChange={(v) => setPeriod(v as "daily" | "monthly")}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="daily">Daily (hour-by-hour)</SelectItem>
-              <SelectItem value="monthly">Monthly (day-by-day)</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {period === "daily" ? (
-          <div className="space-y-1.5">
-            <Label>Date</Label>
-            <Input type="date" value={day} onChange={(e) => setDay(e.target.value)} />
-          </div>
-        ) : (
-          <div className="space-y-1.5">
-            <Label>Month</Label>
-            <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
-          </div>
-        )}
-
-        <Button onClick={generate} disabled={busy} className="w-full sm:w-auto">
-          {busy ? <><FileDown className="h-4 w-4 animate-pulse" /> Generating…</> : <><Download className="h-4 w-4" /> Download CSV</>}
-        </Button>
+      {/* Report Type Tabs */}
+      <div className="flex gap-2 border-b border-border">
+        <button
+          onClick={() => setReportType("usage")}
+          className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+            reportType === "usage"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Usage Report
+        </button>
+        <button
+          onClick={() => setReportType("chemical")}
+          className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 ${
+            reportType === "chemical"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Beaker className="h-4 w-4" /> Chemical Events
+        </button>
       </div>
 
-      <p className="text-xs text-muted-foreground">
-        Wash &amp; water values are summed within each bucket. Chemical levels show the latest reading in each bucket.
-      </p>
+      {/* Usage Report Tab */}
+      {reportType === "usage" && (
+        <div className="rounded-xl border border-border bg-card p-5 shadow-card space-y-4 max-w-2xl">
+          <div className="space-y-1.5">
+            <Label>Site</Label>
+            <Select value={siteId} onValueChange={setSiteId}>
+              <SelectTrigger><SelectValue placeholder="Select a site" /></SelectTrigger>
+              <SelectContent>
+                {sites.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Period</Label>
+            <Select value={period} onValueChange={(v) => setPeriod(v as "daily" | "monthly")}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="daily">Daily (hour-by-hour)</SelectItem>
+                <SelectItem value="monthly">Monthly (day-by-day)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {period === "daily" ? (
+            <div className="space-y-1.5">
+              <Label>Date</Label>
+              <Input type="date" value={day} onChange={(e) => setDay(e.target.value)} />
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <Label>Month</Label>
+              <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
+            </div>
+          )}
+
+          <Button onClick={generateUsageReport} disabled={busy} className="w-full sm:w-auto">
+            {busy ? <><FileDown className="h-4 w-4 animate-pulse" /> Generating…</> : <><Download className="h-4 w-4" /> Download CSV</>}
+          </Button>
+
+          <p className="text-xs text-muted-foreground">
+            Wash & water values are summed within each bucket. Chemical levels show the latest reading in each bucket.
+          </p>
+        </div>
+      )}
+
+      {/* Chemical Events Tab */}
+      {reportType === "chemical" && (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-border bg-card p-5 shadow-card space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <Label>Site</Label>
+                <Select value={siteId} onValueChange={setSiteId}>
+                  <SelectTrigger><SelectValue placeholder="Select a site" /></SelectTrigger>
+                  <SelectContent>
+                    {sites.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Start Date</Label>
+                <Input type="date" value={chemStartDate} onChange={(e) => setChemStartDate(e.target.value)} />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>End Date</Label>
+                <Input type="date" value={chemEndDate} onChange={(e) => setChemEndDate(e.target.value)} />
+              </div>
+            </div>
+
+            {chemicalEvents.length > 0 && (
+              <Button onClick={downloadChemicalReport} className="w-full sm:w-auto">
+                <Download className="h-4 w-4 mr-2" /> Export CSV
+              </Button>
+            )}
+          </div>
+
+          {/* Chemical Events Table */}
+          {chemicalEvents.length > 0 ? (
+            <div className="rounded-xl border border-border bg-card shadow-card overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50 border-b border-border">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-semibold text-muted-foreground">Chemical</th>
+                      <th className="px-4 py-3 text-left font-semibold text-muted-foreground">Went Low</th>
+                      <th className="px-4 py-3 text-left font-semibold text-muted-foreground">Topped Up</th>
+                      <th className="px-4 py-3 text-left font-semibold text-muted-foreground">Duration</th>
+                      <th className="px-4 py-3 text-right font-semibold text-muted-foreground">Washes (Low)</th>
+                      <th className="px-4 py-3 text-right font-semibold text-muted-foreground">Washes (Refill)</th>
+                      <th className="px-4 py-3 text-right font-semibold text-muted-foreground">During Low</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {chemicalEvents.map((evt) => (
+                      <tr key={evt.id} className="hover:bg-muted/50 transition-colors">
+                        <td className="px-4 py-3 font-medium">{evt.meter_name}</td>
+                        <td className="px-4 py-3 text-muted-foreground text-xs">{formatDateTime(evt.went_low_at)}</td>
+                        <td className="px-4 py-3 text-muted-foreground text-xs">
+                          {evt.topped_up_at ? formatDateTime(evt.topped_up_at) : <span className="text-amber-600 font-medium">Still low</span>}
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground">
+                          <span className={evt.topped_up_at ? "text-foreground" : "text-amber-600 font-medium"}>
+                            {formatDuration(evt.went_low_at, evt.topped_up_at)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums">{evt.wash_count_at_low ?? "-"}</td>
+                        <td className="px-4 py-3 text-right tabular-nums">{evt.wash_count_at_topup ?? "-"}</td>
+                        <td className="px-4 py-3 text-right tabular-nums font-medium">{evt.washes_during_low}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="px-4 py-3 bg-muted/30 border-t border-border text-xs text-muted-foreground">
+                {chemicalEvents.length} event{chemicalEvents.length === 1 ? "" : "s"} in this period
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-border bg-muted/10 p-8 text-center">
+              <Beaker className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
+              <p className="text-muted-foreground text-sm">No chemical events in this period</p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
