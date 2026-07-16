@@ -105,13 +105,12 @@ function DashboardPage() {
   }
 });
 
-const freshMeterIds = (meters as any[]).filter((m) => m.meter_type === "fresh_water").map((m) => m.id);
-
         (latest ?? []).forEach((r: any) => {
   if (r.reading_type === "today" && r.device_key?.startsWith("0002")) {
     freshToday = Number(r.value);
   }
 });
+      }
 
       return {
         id: s.id,
