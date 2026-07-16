@@ -77,6 +77,7 @@ AS $$
 DECLARE
   v_old_state int;
   v_current_wash_count int;
+  v_event_id uuid;
 BEGIN
   -- Get previous state (default to 0 if not exists)
   SELECT current_state INTO v_old_state FROM public.chemical_state 
@@ -97,7 +98,7 @@ BEGIN
   IF v_old_state != p_new_state THEN
     IF p_new_state = 1 THEN
       -- Chemical went LOW (0→1)
-      GET LATEST wash reading for this site
+      -- Get latest wash reading for this site
       SELECT value INTO v_current_wash_count FROM public.readings 
       WHERE site_id = p_site_id AND meter_id = p_wash_meter_id
       ORDER BY recorded_at DESC LIMIT 1;
@@ -111,7 +112,7 @@ BEGIN
       
     ELSIF p_new_state = 0 AND v_old_state = 1 THEN
       -- Chemical was topped up (1→0)
-      GET LATEST wash reading for this site
+      -- Get latest wash reading for this site
       SELECT value INTO v_current_wash_count FROM public.readings 
       WHERE site_id = p_site_id AND meter_id = p_wash_meter_id
       ORDER BY recorded_at DESC LIMIT 1;
@@ -119,10 +120,13 @@ BEGIN
       -- Mark most recent low event as topped up
       UPDATE public.chemical_low_events 
       SET topped_up_at = p_now, wash_count_at_topup = COALESCE(v_current_wash_count::int, 0)
-      WHERE site_id = p_site_id 
-        AND meter_id = p_meter_id 
-        AND topped_up_at IS NULL
-      ORDER BY went_low_at DESC LIMIT 1;
+      WHERE id = (
+        SELECT id FROM public.chemical_low_events
+        WHERE site_id = p_site_id 
+          AND meter_id = p_meter_id 
+          AND topped_up_at IS NULL
+        ORDER BY went_low_at DESC LIMIT 1
+      );
       
       RETURN json_build_object('event', 'topped_up', 'wash_count', COALESCE(v_current_wash_count::int, 0));
     END IF;
