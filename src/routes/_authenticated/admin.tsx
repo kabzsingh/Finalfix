@@ -232,6 +232,7 @@ scripts/setup-admin.sql`}
   };
 
   const removeMeter = async (id: string) => {
+    if (!confirm("Remove this meter? This cannot be undone.")) return;
     const { error } = await supabase.from("site_meters").delete().eq("id", id);
     if (error) return toast.error(error.message);
     load();
@@ -556,7 +557,7 @@ function SiteAdminCard({
                     </div>
                   </div>
                 </div>
-                <Button variant="ghost" size="icon" onClick={() => onRemoveMeter(m.id)} className="h-8 w-8 opacity-0 group-hover:opacity-100"><Trash2 className="h-3.5 w-3.5" /></Button>
+                <Button variant="ghost" size="icon" onClick={() => onRemoveMeter(m.id)} className="h-8 w-8 text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
               </div>
             ))}
 
