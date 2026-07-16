@@ -107,18 +107,11 @@ function DashboardPage() {
 
 const freshMeterIds = (meters as any[]).filter((m) => m.meter_type === "fresh_water").map((m) => m.id);
 
-        // Fetch today readings for fresh water meters
-        if (freshMeterIds.length > 0) {
-          const { data: freshReadings } = await supabase
-            .from("readings")
-            .select("meter_id,value,reading_type,recorded_at")
-            .in("meter_id", freshMeterIds)
-            .in("reading_type", ["today"]);
-          (freshReadings ?? []).forEach((r: any) => {
-            if (r.reading_type === "today" && new Date(r.recorded_at) >= startOfDay) freshToday += Number(r.value);
-          });
-        }
-      }
+        (latest ?? []).forEach((r: any) => {
+  if (r.reading_type === "today" && r.device_key?.startsWith("0002")) {
+    freshToday = Number(r.value);
+  }
+});
 
       return {
         id: s.id,
