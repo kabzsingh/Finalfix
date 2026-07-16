@@ -75,12 +75,8 @@ function DashboardPage() {
 
       if (meterIds.length > 0) {
         // Fetch latest (by recorded_at) readings for determining last_seen and chemical statuses
-        const { data: latest } = await supabase
-          .from("readings")
-          .select("meter_id,value,recorded_at,reading_type")
-          .in("meter_id", meterIds)
-          .order("recorded_at", { ascending: false })
-          .limit(500);
+       const { data: latest } = await supabase
+  .rpc("get_latest_readings_for_site", { p_site_id: s.id });
 
         const latestByMeter = new Map<string, { value: number; recorded_at: string; reading_type?: string }>();
         (latest ?? []).forEach((r: any) => {
