@@ -72,9 +72,9 @@ export const Route = createFileRoute("/api/public/ingest")({
         const meters = await getMetersForSite(db, keyRow.site_id);
         const map = new Map(meters.map((m) => [m.device_key, { id: m.id, type: m.meter_type }]));
 
-        // ===== NEW: Process readings by type =====
+        // Separate readings by type
         const readings: any[] = [];
-        const chemicalEvents: any[] = [];
+        const chemicalReadings: any[] = [];
         const unknown: string[] = [];
 
         for (const r of parsed.data.readings) {
@@ -84,45 +84,58 @@ export const Route = createFileRoute("/api/public/ingest")({
             continue; 
           }
 
-          if (r.type === 'event') {
-            // Handle chemical event (low/topped up)
-            // Example value: 1 means event occurred, 0 means no event
-            if (r.value === 1) {
-              chemicalEvents.push({
-                device_key: r.device_key,
-                meter_id: meterInfo.id,
-                site_id: keyRow.site_id,
-                recorded_at: r.recorded_at || new Date().toISOString(),
-              });
-            }
+          // Chemical level reading (0=full, 1=low)
+          if (r.type === 'level') {
+            chemicalReadings.push({
+              device_key: r.device_key,
+              meter_id: meterInfo.id,
+              site_id: keyRow.site_id,
+              state: Math.round(r.value), // 0 or 1
+              recorded_at: r.recorded_at || new Date().toISOString(),
+            });
             continue;
           }
 
-          // Regular reading (total, today, level)
-          readings.push({
-            site_id: keyRow.site_id,
-            meter_id: meterInfo.id,
-            value: r.value,
-            reading_type: r.type || 'total',
-            ...(r.recorded_at ? { recorded_at: r.recorded_at } : {}),
-          });
+          // Regular reading (total, today, event)
+          if (r.type !== 'event') {
+            readings.push({
+              site_id: keyRow.site_id,
+              meter_id: meterInfo.id,
+              value: r.value,
+              reading_type: r.type || 'total',
+              ...(r.recorded_at ? { recorded_at: r.recorded_at } : {}),
+            });
+          }
         }
 
-        if (readings.length === 0 && chemicalEvents.length === 0) {
+        if (readings.length === 0 && chemicalReadings.length === 0) {
           return json({ error: "No matching meters", unknown }, 400);
         }
 
-        // Insert readings
+        // Insert regular readings
         if (readings.length > 0) {
           const { error: insErr } = await db.from("readings").insert(readings);
           if (insErr) return json({ error: insErr.message }, 500);
         }
 
-        // Process chemical events
-        // TODO: Implement chemical event tracking based on ESP32 data
-        if (chemicalEvents.length > 0) {
-          console.log(`Received ${chemicalEvents.length} chemical events`);
-          // Will implement in next step
+        // Process chemical state changes and track low events
+        let chemicalEvents = 0;
+        for (const chem of chemicalReadings) {
+          // Find the wash meter for this site to get current wash count
+          const washMeter = meters.find((m) => m.meter_type === "wash");
+          
+          try {
+            const { data } = await db.rpc('handle_chemical_state_change', {
+              p_site_id: chem.site_id,
+              p_meter_id: chem.meter_id,
+              p_new_state: chem.state,
+              p_wash_meter_id: washMeter?.id || null,
+              p_now: chem.recorded_at,
+            });
+            if (data?.event !== 'no_change') chemicalEvents++;
+          } catch (e) {
+            console.error(`Failed to handle chemical state for meter ${chem.meter_id}:`, e);
+          }
         }
 
         await db.from("site_api_keys")
@@ -132,7 +145,7 @@ export const Route = createFileRoute("/api/public/ingest")({
         return json({ 
           ok: true, 
           accepted: readings.length, 
-          chemical_events: chemicalEvents.length,
+          chemical_events: chemicalEvents,
           unknown 
         });
       },

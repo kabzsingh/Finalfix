@@ -779,332 +779,290 @@ function ReportSettings({ site, onSaved }: { site: Site; onSaved: () => void }) 
 
 function buildEsp32Sketch(site: Site, meters: Meter[]) {
   const endpoint = `${typeof window !== "undefined" ? window.location.origin : "https://your-deployment-url.com"}/api/public/ingest`;
-  const safeKey = (k: string) => k.replace(/[^a-zA-Z0-9]/g, "_");
-
-  const PINS = [4, 5, 13, 14, 15, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33];
-  const pulseMeters = meters.filter((m) => m.meter_type === "wash" || m.meter_type === "fresh_water" || m.meter_type === "chemical_flow");
-  const levelMeters = meters.filter((m) => m.meter_type === "chemical");
-
-  const assigned: { m: Meter; pin: number; kind: "pulse" | "level" }[] = [];
-  let pinIdx = 0;
-  for (const m of pulseMeters) assigned.push({ m, pin: PINS[pinIdx++ % PINS.length], kind: "pulse" });
-  for (const m of levelMeters) assigned.push({ m, pin: PINS[pinIdx++ % PINS.length], kind: "level" });
-
-  const wiringComment = assigned
-    .map(({ m, pin, kind }) =>
-      kind === "pulse"
-        ? `//   GPIO ${pin}  → ${m.name} pulse input (${m.meter_type}) [device_key: ${m.device_key}]`
-        : `//   GPIO ${pin}  → ${m.name} chemical level switch (NO when full, NC when low) [device_key: ${m.device_key}]`
-    )
-    .join("\n");
-
-  const debounceFor = (t: Meter["meter_type"]) => (t === "wash" ? 500 : 25);
-
-  const pulseDecls = pulseMeters
-    .map((m) => {
-      const a = assigned.find((x) => x.kind === "pulse" && x.m === m)!;
-      const k = safeKey(a.m.device_key);
-      const db = debounceFor(m.meter_type);
-      return `static const uint32_t DEBOUNCE_${k}_MS = ${db};
-volatile uint32_t pulses_${k} = 0;
-volatile uint32_t lastEdge_${k} = 0;
-void IRAM_ATTR isr_${k}() {
-  uint32_t now = millis();
-  if (now - lastEdge_${k} >= DEBOUNCE_${k}_MS) {
-    lastEdge_${k} = now;
-    pulses_${k}++;
+  
+  // Hardcoded Modbus register mapping for Delta HMI
+  // Adjust these based on your actual HMI configuration
+  const modbusMap: Record<string, number> = {
+    "wash_count": 3025,
+    "rinse_meter": 3027,
+    "recycle_topup": 3029,
+    "multi_clean_chem": 3031,
+    "autowash_chem": 3033,
+    "peach_wax_chem": 3035,
+  };
+  
+  // Create meter to register mapping
+  const meterToRegister = new Map<string, number>();
+  for (const m of meters) {
+    // Map meter device_key to register address if available
+    // For now use a simple mapping - you can customize this per site
+    if (m.meter_type === "wash") meterToRegister.set(m.device_key, modbusMap.wash_count);
+    else if (m.meter_type === "fresh_water" && m.name.toLowerCase().includes("rinse")) meterToRegister.set(m.device_key, modbusMap.rinse_meter);
+    else if (m.meter_type === "fresh_water" && m.name.toLowerCase().includes("recycle")) meterToRegister.set(m.device_key, modbusMap.recycle_topup);
+    else if (m.meter_type === "chemical" && m.name.toLowerCase().includes("multi")) meterToRegister.set(m.device_key, modbusMap.multi_clean_chem);
+    else if (m.meter_type === "chemical" && m.name.toLowerCase().includes("autowash")) meterToRegister.set(m.device_key, modbusMap.autowash_chem);
+    else if (m.meter_type === "chemical" && m.name.toLowerCase().includes("wax")) meterToRegister.set(m.device_key, modbusMap.peach_wax_chem);
   }
-}`;
-    })
-    .join("\n\n");
 
-  const pulseAttach = pulseMeters
-    .map((m) => {
-      const a = assigned.find((x) => x.kind === "pulse" && x.m === m)!;
-      const k = safeKey(m.device_key);
-      return `  pinMode(${a.pin}, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(${a.pin}), isr_${k}, FALLING);`;
-    })
-    .join("\n");
-
-  const levelDecls = levelMeters
-    .map((m) => {
-      const k = safeKey(m.device_key);
-      return `uint8_t state_${k} = 0;
-uint32_t stableSince_${k} = 0;
-uint8_t lastRaw_${k} = 0;
-uint8_t reportedState_${k} = 255;`;
-    })
-    .join("\n");
-
-  const levelPins = levelMeters
-    .map((m) => {
-      const a = assigned.find((x) => x.kind === "level" && x.m === m)!;
-      return `  pinMode(${a.pin}, INPUT_PULLUP);`;
-    })
-    .join("\n");
-
-  const levelSample = levelMeters
-    .map((m) => {
-      const a = assigned.find((x) => x.kind === "level" && x.m === m)!;
-      const k = safeKey(m.device_key);
-      return `  {
-    uint8_t raw = (digitalRead(${a.pin}) == LOW) ? 1 : 0;
-    if (raw != lastRaw_${k}) { lastRaw_${k} = raw; stableSince_${k} = millis(); }
-    else if (millis() - stableSince_${k} >= LEVEL_DEBOUNCE_MS) {
-      state_${k} = raw;
-    }
-  }`;
-    })
-    .join("\n");
-
-  // Snapshot struct fields for pulse meters
-  const snapshotPulseFields = pulseMeters
-    .map((m) => `  uint32_t p_${safeKey(m.device_key)};`)
-    .join("\n");
-
-  // Snapshot struct fields for level meters
-  const snapshotLevelFields = levelMeters
-    .map((m) => `  uint8_t s_${safeKey(m.device_key)};`)
-    .join("\n");
-
-  // appendToQueue printf args
-  const appendArgs = [
-    ...pulseMeters.map((m) => `p_${safeKey(m.device_key)}`),
-    ...levelMeters.map((m) => `s_${safeKey(m.device_key)}`),
-  ].join(", ");
-
-  // appendToQueue format string fields
-  const appendFmt = [
-    ...pulseMeters.map((m) => `\\"p_${safeKey(m.device_key)}\\":%u`),
-    ...levelMeters.map((m) => `\\"s_${safeKey(m.device_key)}\\":%u`),
-  ].join(",");
-
-  // Capture snapshot
-  const captureNoInt = pulseMeters
-    .map((m) => `  uint32_t p_${safeKey(m.device_key)} = pulses_${safeKey(m.device_key)};`)
-    .join("\n");
-
-  const hasDataCheck = [
-    ...pulseMeters.map((m) => `p_${safeKey(m.device_key)} > 0`),
-    ...levelMeters.map((m) => `state_${safeKey(m.device_key)} != reportedState_${safeKey(m.device_key)}`),
-  ].join(" ||\n                 ") || "false";
-
-  const snapshotAssignPulse = pulseMeters
-    .map((m) => `  s.p_${safeKey(m.device_key)} = p_${safeKey(m.device_key)};`)
-    .join("\n");
-
-  const snapshotAssignLevel = levelMeters
-    .map((m) => `  s.s_${safeKey(m.device_key)} = state_${safeKey(m.device_key)};`)
-    .join("\n");
-
-  const clearPulses = pulseMeters
-    .map((m) => `  pulses_${safeKey(m.device_key)} -= p_${safeKey(m.device_key)};`)
-    .join("\n");
-
-  const clearReported = levelMeters
-    .map((m) => `  reportedState_${safeKey(m.device_key)} = state_${safeKey(m.device_key)};`)
-    .join("\n");
-
-  // Flush payload build
-  const flushPayloadParts = [
-    ...pulseMeters.map((m) => {
-      const k = safeKey(m.device_key);
-      const conv = m.meter_type === "wash" ? `(float)doc["p_${k}"]` : `(float)(uint32_t)doc["p_${k}"] / 2.0f`;
-      return `    float v_${k} = ${conv};
-    payload += ",{\\"device_key\\":\\"${m.device_key}\\",\\"value\\":" + String(v_${k}, 3) + "}";`;
-    }),
-    ...levelMeters.map((m) => {
-      const k = safeKey(m.device_key);
-      return `    payload += ",{\\"device_key\\":\\"${m.device_key}\\",\\"value\\":" + String((uint8_t)doc["s_${k}"]) + "}";`;
-    }),
-  ].join("\n");
-
-  const levelChangedChecks = levelMeters
-    .map((m) => `  if (state_${safeKey(m.device_key)} != reportedState_${safeKey(m.device_key)}) levelChanged = true;`)
-    .join("\n") || "  // (no level inputs)";
-
-  return `// Auto-generated for site: ${site.name}
-// Endpoint: ${endpoint}
-//
-// === BEFORE FLASHING ===
-//   1. Install ArduinoJson library (v6.x) via Tools > Manage Libraries
-//   2. Set WIFI_SSID, WIFI_PASS, SITE_API_KEY below.
-//   3. Wire sensors to the GPIO pins listed under WIRING.
-//
-// === OFFLINE BUFFERING ===
-//   Readings are saved to SPIFFS flash storage when WiFi is down.
-//   Data survives power cuts and reboots. Up to 5000 snapshots (~3 days).
-//   All buffered data is sent automatically when WiFi reconnects.
-//
-// === RULES ===
-//   • Water/flow meters: 2 pulses = 1 litre  (handled in firmware).
-//   • Wash counters:     1 pulse  = 1 wash    (handled in firmware).
-//   • Chemical level switch: Normally Open when tank is FULL/OK,
-//                            Normally Closed when chemical is LOW.
-//
-// === WIRING ===
-${wiringComment || "//   (no meters configured)"}
-
-#include <WiFi.h>
-#include <HTTPClient.h>
-#include <SPIFFS.h>
+  const sketch = `#include <WiFi.h>
 #include <ArduinoJson.h>
+#include <ModbusTCP.h>
+#include <time.h>
 
-const char* WIFI_SSID    = "YOUR_WIFI_SSID";
-const char* WIFI_PASS    = "YOUR_WIFI_PASSWORD";
-const char* SITE_API_KEY = "ws_live_xxx_paste_from_admin_panel";
-const char* INGEST_URL   = "${endpoint}";
-const char* QUEUE_FILE   = "/queue.jsonl";
+// WiFi Configuration
+const char* SSID = "YOUR_SSID";
+const char* PASSWORD = "YOUR_PASSWORD";
+const char* HMI_IP = "192.168.1.100";      // Delta HMI IP address
+const uint16_t HMI_PORT = 502;             // Modbus TCP port (default 502)
 
-const unsigned long SEND_INTERVAL_MS  = 15UL * 1000UL;
-const unsigned long MIN_PUSH_GAP_MS   = 2UL  * 1000UL;
-const uint32_t      LEVEL_DEBOUNCE_MS = 250;
-const int           MAX_FILE_LINES    = 5000;
+// API Configuration
+const char* API_KEY = "YOUR_SITE_API_KEY"; // From the admin panel
+const char* API_ENDPOINT = "${endpoint}";
 
-unsigned long lastSendMs = 0;
+// Modbus register addresses for Delta HMI
+const uint16_t REG_WASH_COUNT = 3025;
+const uint16_t REG_RINSE_METER = 3027;
+const uint16_t REG_RECYCLE_TOPUP = 3029;
+const uint16_t REG_MULTI_CLEAN_CHEM = 3031;
+const uint16_t REG_AUTOWASH_CHEM = 3033;
+const uint16_t REG_PEACH_WAX_CHEM = 3035;
 
-// ===== Pulse counters (ISR-driven, debounced) =====
-${pulseDecls || "// (no pulse meters)"}
+// Previous readings (for detecting changes)
+struct {
+  uint32_t wash_count = 0;
+  uint32_t rinse_meter = 0;
+  uint32_t recycle_topup = 0;
+  uint8_t multi_clean_chem = 0;
+  uint8_t autowash_chem = 0;
+  uint8_t peach_wax_chem = 0;
+} prevReadings;
 
-// ===== Chemical level switches (debounced polling) =====
-${levelDecls || "// (no chemical level meters)"}
-
-// ===== SPIFFS helpers =====
-void appendToQueue(${pulseMeters.map((m) => `uint32_t p_${safeKey(m.device_key)}`).join(", ")}${pulseMeters.length && levelMeters.length ? ", " : ""}${levelMeters.map((m) => `uint8_t s_${safeKey(m.device_key)}`).join(", ")}) {
-  File f = SPIFFS.open(QUEUE_FILE, FILE_APPEND);
-  if (!f) { Serial.println("Failed to open queue"); return; }
-  f.printf("{${appendFmt}}\\n", ${appendArgs});
-  f.close();
-}
-
-int countQueueLines() {
-  File f = SPIFFS.open(QUEUE_FILE, FILE_READ);
-  if (!f) return 0;
-  int c = 0;
-  while (f.available()) { f.readStringUntil('\\n'); c++; }
-  f.close();
-  return c;
-}
-
-void removeFirstLines(int n) {
-  File src = SPIFFS.open(QUEUE_FILE, FILE_READ);
-  File tmp = SPIFFS.open("/tmp.jsonl", FILE_WRITE);
-  if (!src || !tmp) return;
-  int skipped = 0;
-  while (src.available()) {
-    String line = src.readStringUntil('\\n');
-    if (skipped < n) { skipped++; continue; }
-    if (line.length() > 0) tmp.println(line);
-  }
-  src.close(); tmp.close();
-  SPIFFS.remove(QUEUE_FILE);
-  SPIFFS.rename("/tmp.jsonl", QUEUE_FILE);
-}
-
-void connectWifi() {
-  if (WiFi.status() == WL_CONNECTED) return;
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  Serial.print("Connecting WiFi");
-  unsigned long t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) {
-    delay(500); Serial.print(".");
-  }
-  Serial.println(WiFi.status() == WL_CONNECTED ? " OK" : " FAIL");
-}
-
-void flushQueue() {
-  File f = SPIFFS.open(QUEUE_FILE, FILE_READ);
-  if (!f || f.size() == 0) { if (f) f.close(); return; }
-  int sent = 0;
-  while (f.available()) {
-    String line = f.readStringUntil('\\n');
-    line.trim();
-    if (line.length() == 0) continue;
-    StaticJsonDocument<512> doc;
-    if (deserializeJson(doc, line)) continue;
-    String payload = "{\\"readings\\":[{\\"device_key\\":\\"_dummy\\",\\"value\\":0}";
-${flushPayloadParts}
-    payload += "]}";
-    // Remove dummy
-    payload.replace(",{\\"device_key\\":\\"_dummy\\",\\"value\\":0}", "");
-    payload.replace("{\\"device_key\\":\\"_dummy\\",\\"value\\":0},", "");
-    payload.replace("{\\"device_key\\":\\"_dummy\\",\\"value\\":0}", "");
-    if (WiFi.status() != WL_CONNECTED) connectWifi();
-    if (WiFi.status() != WL_CONNECTED) break;
-    HTTPClient http;
-    http.begin(INGEST_URL);
-    http.addHeader("Content-Type", "application/json");
-    http.addHeader("x-site-api-key", SITE_API_KEY);
-    int code = http.POST(payload);
-    http.end();
-    if (code == 200) { sent++; }
-    else { Serial.printf("Send failed (%d)\\n", code); break; }
-  }
-  f.close();
-  if (sent > 0) {
-    Serial.printf("Flushed %d records\\n", sent);
-    removeFirstLines(sent);
-  }
-}
-
-void captureAndQueue() {
-  noInterrupts();
-${captureNoInt}
-  interrupts();
-  bool hasData = ${hasDataCheck};
-  if (!hasData) return;
-  if (countQueueLines() >= MAX_FILE_LINES) removeFirstLines(100);
-  struct Snap {
-${snapshotPulseFields}
-${snapshotLevelFields}
-  } s;
-${snapshotAssignPulse}
-${snapshotAssignLevel}
-  appendToQueue(${[
-  ...pulseMeters.map((m) => `s.p_${safeKey(m.device_key)}`),
-  ...levelMeters.map((m) => `s.s_${safeKey(m.device_key)}`),
-].join(", ")});
-  noInterrupts();
-${clearPulses}
-  interrupts();
-${clearReported}
-}
+ModbusTCP modbus;
+unsigned long lastReadTime = 0;
+const unsigned long READ_INTERVAL = 5000;  // Read every 5 seconds
 
 void setup() {
   Serial.begin(115200);
-  delay(500);
-  if (!SPIFFS.begin(true)) Serial.println("SPIFFS mount failed!");
-  else Serial.printf("SPIFFS OK — %u bytes free\\n", SPIFFS.totalBytes() - SPIFFS.usedBytes());
-
-  // Configure pulse inputs + ISRs
-${pulseAttach || "  // (no pulse inputs)"}
-
-  // Configure chemical level inputs
-${levelPins || "  // (no level inputs)"}
-
-  connectWifi();
+  delay(1000);
+  
+  Serial.println("\\n\\nESP32 Modbus TCP Client");
+  Serial.println("Connecting to WiFi...");
+  
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(SSID, PASSWORD);
+  
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+    delay(500);
+    Serial.print(".");
+    attempts++;
+  }
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\\nWiFi connected!");
+    Serial.print("IP: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("\\nFailed to connect to WiFi");
+  }
+  
+  // Set up time for timestamps
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  Serial.println("Waiting for NTP time sync...");
+  time_t now = time(nullptr);
+  while (now < 24 * 3600 * 2) {
+    delay(500);
+    Serial.print(".");
+    now = time(nullptr);
+  }
+  Serial.println("\\nTime synced");
+  
+  // Connect to Modbus TCP server
+  Serial.print("Connecting to Modbus TCP server at ");
+  Serial.print(HMI_IP);
+  Serial.print(":");
+  Serial.println(HMI_PORT);
+  
+  modbus.begin(HMI_IP, HMI_PORT);
 }
 
 void loop() {
-  // Debounced level sampling
-${levelSample || "  // (no level inputs)"}
-
-  bool levelChanged = false;
-${levelChangedChecks}
   unsigned long now = millis();
-  if ((levelChanged && (now - lastSendMs) >= MIN_PUSH_GAP_MS) ||
-      (now - lastSendMs) >= SEND_INTERVAL_MS) {
-    lastSendMs = now;
-    captureAndQueue();
-    flushQueue();
+  
+  if (now - lastReadTime >= READ_INTERVAL) {
+    lastReadTime = now;
+    
+    if (!modbus.isConnected(HMI_IP, HMI_PORT)) {
+      Serial.println("Modbus TCP disconnected, reconnecting...");
+      modbus.begin(HMI_IP, HMI_PORT);
+      delay(1000);
+    }
+    
+    if (modbus.isConnected(HMI_IP, HMI_PORT)) {
+      readModbusAndSend();
+    } else {
+      Serial.println("Failed to connect to Modbus TCP server");
+    }
   }
-  delay(10);
+  
+  delay(100);
+}
+
+void readModbusAndSend() {
+  JsonDocument doc;
+  JsonArray readings = doc.createNestedArray("readings");
+  
+  bool hasReadings = false;
+  
+  // Read all registers
+  // Wash count - absolute counter (total)
+  uint32_t washCount = readHoldingRegister(REG_WASH_COUNT);
+  if (washCount != prevReadings.wash_count) {
+    JsonObject r = readings.createNestedObject();
+    r["device_key"] = "0001";  // Wash Count
+    r["value"] = washCount;
+    r["type"] = "total";
+    prevReadings.wash_count = washCount;
+    hasReadings = true;
+    Serial.print("Wash Count: ");
+    Serial.println(washCount);
+  }
+  
+  // Rinse meter - absolute counter (total)
+  uint32_t rinseMeter = readHoldingRegister(REG_RINSE_METER);
+  if (rinseMeter != prevReadings.rinse_meter) {
+    JsonObject r = readings.createNestedObject();
+    r["device_key"] = "0002";  // Rinse Meter
+    r["value"] = rinseMeter;
+    r["type"] = "total";
+    prevReadings.rinse_meter = rinseMeter;
+    hasReadings = true;
+    Serial.print("Rinse Meter: ");
+    Serial.println(rinseMeter);
+  }
+  
+  // Recycle top-up - absolute counter (total)
+  uint32_t recycleTopup = readHoldingRegister(REG_RECYCLE_TOPUP);
+  if (recycleTopup != prevReadings.recycle_topup) {
+    JsonObject r = readings.createNestedObject();
+    r["device_key"] = "0003";  // Recycle Top-up
+    r["value"] = recycleTopup;
+    r["type"] = "total";
+    prevReadings.recycle_topup = recycleTopup;
+    hasReadings = true;
+    Serial.print("Recycle Top-up: ");
+    Serial.println(recycleTopup);
+  }
+  
+  // Chemical levels (0=full, 1=empty)
+  uint8_t multiCleanChem = readHoldingRegister(REG_MULTI_CLEAN_CHEM) & 0xFF;
+  if (multiCleanChem != prevReadings.multi_clean_chem) {
+    JsonObject r = readings.createNestedObject();
+    r["device_key"] = "CHEM_001";  // Multi Clean Chemical
+    r["value"] = multiCleanChem;
+    r["type"] = "level";
+    prevReadings.multi_clean_chem = multiCleanChem;
+    hasReadings = true;
+    Serial.print("Multi Clean Chemical: ");
+    Serial.println(multiCleanChem == 0 ? "FULL" : "LOW");
+  }
+  
+  uint8_t autowashChem = readHoldingRegister(REG_AUTOWASH_CHEM) & 0xFF;
+  if (autowashChem != prevReadings.autowash_chem) {
+    JsonObject r = readings.createNestedObject();
+    r["device_key"] = "CHEM_002";  // Autowash Chemical
+    r["value"] = autowashChem;
+    r["type"] = "level";
+    prevReadings.autowash_chem = autowashChem;
+    hasReadings = true;
+    Serial.print("Autowash Chemical: ");
+    Serial.println(autowashChem == 0 ? "FULL" : "LOW");
+  }
+  
+  uint8_t peachWaxChem = readHoldingRegister(REG_PEACH_WAX_CHEM) & 0xFF;
+  if (peachWaxChem != prevReadings.peach_wax_chem) {
+    JsonObject r = readings.createNestedObject();
+    r["device_key"] = "CHEM_003";  // Peach Wax Chemical
+    r["value"] = peachWaxChem;
+    r["type"] = "level";
+    prevReadings.peach_wax_chem = peachWaxChem;
+    hasReadings = true;
+    Serial.print("Peach Wax Chemical: ");
+    Serial.println(peachWaxChem == 0 ? "FULL" : "LOW");
+  }
+  
+  // If any readings changed, send them
+  if (hasReadings && readings.size() > 0) {
+    sendReadings(doc);
+  }
+}
+
+uint32_t readHoldingRegister(uint16_t regAddr) {
+  // Read 2 consecutive registers (32-bit value)
+  uint16_t result[2] = {0, 0};
+  if (modbus.readHreg(HMI_IP, regAddr, result, 2)) {
+    // Combine registers: high word + low word
+    return ((uint32_t)result[0] << 16) | result[1];
+  }
+  Serial.print("Failed to read register ");
+  Serial.println(regAddr);
+  return 0;
+}
+
+void sendReadings(JsonDocument& doc) {
+  // Get current timestamp
+  time_t now = time(nullptr);
+  struct tm timeinfo = *localtime(&now);
+  char timestamp[30];
+  strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
+  
+  // Add timestamp to first reading
+  JsonArray readings = doc["readings"].as<JsonArray>();
+  if (readings.size() > 0) {
+    readings[0]["recorded_at"] = timestamp;
+  }
+  
+  String payload;
+  serializeJson(doc, payload);
+  
+  Serial.println("Sending: ");
+  Serial.println(payload);
+  
+  WiFiClient client;
+  if (client.connect(WiFi.gatewayIP(), 80)) {
+    // Extract path from endpoint
+    String path = "/api/public/ingest";
+    
+    client.print("POST ");
+    client.print(path);
+    client.println(" HTTP/1.1");
+    client.print("Host: ");
+    client.println(WiFi.gatewayIP());
+    client.println("Content-Type: application/json");
+    client.println("x-site-api-key: " + String(API_KEY));
+    client.print("Content-Length: ");
+    client.println(payload.length());
+    client.println();
+    client.println(payload);
+    
+    // Wait for response
+    while (client.connected()) {
+      if (client.available()) {
+        String line = client.readStringUntil('\\n');
+        Serial.println(line);
+        if (line == "\\r") break;  // End of headers
+      }
+    }
+    client.stop();
+    Serial.println("Request sent");
+  } else {
+    Serial.println("Failed to connect to API endpoint");
+  }
 }
 `;
-}
 
+  return sketch;
+}
 
 function EspSketchDialog({ site, meters, onClose }: { site: Site | null; meters: Meter[]; onClose: () => void }) {
   const code = site ? buildEsp32Sketch(site, meters) : "";
