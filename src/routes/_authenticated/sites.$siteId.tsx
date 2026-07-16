@@ -163,32 +163,61 @@ function SiteDetail() {
     setLiveEntries(seed);
     if (rows.length > 0) setLastSeenTs(rows[rows.length - 1].recorded_at);
 
-    // Fetch day-start baseline per absolute-counter meter (for realtime updates)
+    // Fetch day-start baseline AND current latest value per absolute-counter meter.
+    // Wash / fresh_water meters report a running counter (like an odometer), so
+    // "today" = latest reading - reading at midnight, and "total" = latest reading.
+    // (Summing raw readings, as we do for chemical_flow below, would double-count
+    // the same counter value across every reading in the window.)
     const absMeters = ((m as any) ?? []).filter(
       (x: Meter) => x.meter_type === "wash" || x.meter_type === "fresh_water"
     );
     const newBaseline: Record<string, number> = {};
+    const absTotals: Record<string, number> = {};
     for (const am of absMeters) {
-      const { data: br } = await supabase
-        .from("readings")
-        .select("value")
-        .eq("meter_id", am.id)
-        .lt("recorded_at", startOfDay.toISOString())
-        .order("recorded_at", { ascending: false })
-        .limit(1);
+      const [{ data: br }, { data: lr }] = await Promise.all([
+        supabase
+          .from("readings")
+          .select("value")
+          .eq("meter_id", am.id)
+          .lt("recorded_at", startOfDay.toISOString())
+          .order("recorded_at", { ascending: false })
+          .limit(1),
+        supabase
+          .from("readings")
+          .select("value")
+          .eq("meter_id", am.id)
+          .order("recorded_at", { ascending: false })
+          .limit(1),
+      ]);
       const bv = (br as any)?.[0]?.value;
       if (bv !== undefined) newBaseline[am.id] = Number(bv);
+      const lv = (lr as any)?.[0]?.value;
+      if (lv !== undefined) absTotals[am.id] = Number(lv);
     }
     setDayBaseline(newBaseline);
 
-    // Compute today's totals since midnight
-    const { data: totals } = await supabase.rpc("meter_totals_since", {
-      _site_id: siteId,
-      _since: startOfDay.toISOString(),
-    });
+    // Chemical-flow meters report incremental deltas per reading, so summing is correct.
+    const [{ data: sumSinceMidnight }, { data: allTime }] = await Promise.all([
+      supabase.rpc("meter_totals_since", { _site_id: siteId, _since: startOfDay.toISOString() }),
+      supabase.rpc("meter_totals", { _site_id: siteId }),
+    ]);
+
+    const todaysMap: Record<string, number> = {};
     const totalsMap: Record<string, number> = {};
-    for (const row of (totals as any[]) ?? []) totalsMap[row.meter_id] = Number(row.total) || 0;
-    setTodays(totalsMap);
+    for (const row of (sumSinceMidnight as any[]) ?? []) todaysMap[row.meter_id] = Number(row.total) || 0;
+    for (const row of (allTime as any[]) ?? []) totalsMap[row.meter_id] = Number(row.total) || 0;
+
+    // Overwrite with correct counter-based math for wash / fresh_water meters.
+    for (const am of absMeters) {
+      const latest = absTotals[am.id];
+      if (latest === undefined) continue;
+      const baseline = newBaseline[am.id] ?? 0;
+      totalsMap[am.id] = latest;
+      todaysMap[am.id] = Math.max(0, latest - baseline);
+    }
+
+    setTodays(todaysMap);
+    setTotals(totalsMap);
   };
 
   const applyRealtimeRow = (row: { meter_id: string; value: number; recorded_at: string }) => {
@@ -343,7 +372,7 @@ function SiteDetail() {
         <StatCard icon={Droplets} label="Water total" value={`${stats.freshLifetime.toFixed(1)} L`} />
       </div>
 
-      {washMeters.length > 0 || freshMeters.length > 0 ? (
+      {washMeters.length > 1 || freshMeters.length > 1 ? (
         <div>
           <h2 className="text-lg font-semibold mb-4">Water Meters</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

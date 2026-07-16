@@ -79,20 +79,20 @@ export function MeterCard({
       </div>
 
       {/* Value Display */}
-      <div className="mb-3">
-        <div className="text-2xl font-bold tabular-nums">
-          {fmt(value)}
-          <span className="text-xs text-muted-foreground ml-1">{unitLabel}</span>
-        </div>
-        {capacity && !isWash && (
-          <div className="text-xs text-muted-foreground mt-1">
-            Capacity: {capacity}
-            {unit}
+      {today == null && total == null ? (
+        <div className="mb-3">
+          <div className="text-2xl font-bold tabular-nums">
+            {fmt(value)}
+            <span className="text-xs text-muted-foreground ml-1">{unitLabel}</span>
           </div>
-        )}
-      </div>
-
-      {(today != null || total != null) && (
+          {capacity && !isWash && (
+            <div className="text-xs text-muted-foreground mt-1">
+              Capacity: {capacity}
+              {unit}
+            </div>
+          )}
+        </div>
+      ) : (
         <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
           {today != null && (
             <div className="rounded-md bg-secondary/60 px-2 py-1.5">
