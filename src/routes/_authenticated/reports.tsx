@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Download, FileDown, Beaker } from "lucide-react";
+import { Download, FileDown, Beaker, Clock, AlertTriangle, CheckCircle2, Grid3x3, LayoutList } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/reports")({ component: ReportsPage });
@@ -61,6 +61,7 @@ function ReportsPage() {
   const [sites, setSites] = useState<Site[]>([]);
   const [siteId, setSiteId] = useState<string>("");
   const [reportType, setReportType] = useState<"usage" | "chemical">("usage");
+  const [chemicalViewMode, setChemicalViewMode] = useState<"table" | "cards">("cards");
   
   // Usage report state
   const [period, setPeriod] = useState<"daily" | "monthly">("daily");
@@ -389,14 +390,112 @@ function ReportsPage() {
             </div>
 
             {chemicalEvents.length > 0 && (
-              <Button onClick={downloadChemicalReport} className="w-full sm:w-auto">
-                <Download className="h-4 w-4 mr-2" /> Export CSV
-              </Button>
+              <div className="flex gap-2 items-center">
+                <Button onClick={downloadChemicalReport} className="w-full sm:w-auto">
+                  <Download className="h-4 w-4 mr-2" /> Export CSV
+                </Button>
+                <div className="flex gap-1 border border-border rounded-lg p-1">
+                  <button
+                    onClick={() => setChemicalViewMode("cards")}
+                    className={`p-2 rounded transition-colors ${
+                      chemicalViewMode === "cards"
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    title="Card view"
+                  >
+                    <Grid3x3 className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => setChemicalViewMode("table")}
+                    className={`p-2 rounded transition-colors ${
+                      chemicalViewMode === "table"
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    title="Table view"
+                  >
+                    <LayoutList className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
             )}
           </div>
 
-          {/* Chemical Events Table */}
-          {chemicalEvents.length > 0 ? (
+          {/* Chemical Events - Card View (Timeline) */}
+          {chemicalViewMode === "cards" && chemicalEvents.length > 0 ? (
+            <div className="space-y-3">
+              <div className="text-xs font-semibold text-muted-foreground px-1">
+                {chemicalEvents.length} event{chemicalEvents.length === 1 ? "" : "s"}
+              </div>
+              {chemicalEvents.map((evt, idx) => {
+                const isStillLow = !evt.topped_up_at;
+                return (
+                  <div
+                    key={evt.id}
+                    className={`rounded-xl border-2 p-4 transition-all ${
+                      isStillLow
+                        ? "border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 dark:border-amber-700/50"
+                        : "border-green-200 bg-green-50/50 dark:bg-green-950/20 dark:border-green-700/50"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-4 mb-3">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-semibold text-base leading-tight mb-1">{evt.meter_name}</h4>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md ${
+                            isStillLow
+                              ? "bg-amber-200/50 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200"
+                              : "bg-green-200/50 text-green-900 dark:bg-green-900/50 dark:text-green-200"
+                          }`}>
+                            {isStillLow ? (
+                              <>
+                                <AlertTriangle className="h-3 w-3" />
+                                Still Low
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="h-3 w-3" />
+                                Topped Up
+                              </>
+                            )}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {formatDuration(evt.went_low_at, evt.topped_up_at)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3 pb-3 border-b border-border/50">
+                      <div className="space-y-1">
+                        <div className="text-xs text-muted-foreground font-medium">Went Low</div>
+                        <div className="text-sm font-medium">{new Date(evt.went_low_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-xs text-muted-foreground font-medium">Topped Up</div>
+                        <div className="text-sm font-medium">
+                          {evt.topped_up_at ? new Date(evt.topped_up_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : "Pending"}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-xs text-muted-foreground font-medium">At Low</div>
+                        <div className="text-sm font-mono font-semibold">{evt.wash_count_at_low ?? "-"}</div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-xs text-muted-foreground font-medium">During</div>
+                        <div className="text-sm font-mono font-semibold text-primary">{evt.washes_during_low}</div>
+                      </div>
+                    </div>
+
+                    <div className="text-xs text-muted-foreground">
+                      Wash #{evt.wash_count_at_low ?? "?"} → #{evt.wash_count_at_topup ?? "?"}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : chemicalViewMode === "table" && chemicalEvents.length > 0 ? (
             <div className="rounded-xl border border-border bg-card shadow-card overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
