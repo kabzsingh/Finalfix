@@ -251,9 +251,9 @@ function SiteCard({ s, now }: { s: SiteOverview; now: number }) {
       >
         {/* Dark overlay for readability if background exists */}
         {s.background_url && (
-          <div className="absolute inset-0 bg-black/40 rounded-xl" />
+          <div className="absolute inset-0 bg-black/40 rounded-xl pointer-events-none" />
         )}
-        <div className="relative">
+        <div className="relative z-10">
           {/* Logo if present */}
           {s.logo_url && (
             <div className="mb-3 pb-3 border-b border-border/50">
