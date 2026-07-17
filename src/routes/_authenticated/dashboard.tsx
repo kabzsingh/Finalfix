@@ -35,12 +35,31 @@ function DashboardPage() {
 
   const loadDashboard = async () => {
     try {
-      const { data: userSites } = await supabase
-        .from("user_access")
-        .select("site_id")
-        .eq("user_id", user?.id);
+      // Check if user is admin
+      const { data: adminCheck } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user?.id)
+        .eq("role", "admin")
+        .single();
 
-      const siteIds = (userSites || []).map((us: any) => us.site_id);
+      let siteIds: string[] = [];
+
+      if (adminCheck) {
+        // Admin: get all sites
+        const { data: allSites } = await supabase
+          .from("sites")
+          .select("id");
+        siteIds = (allSites || []).map((s: any) => s.id);
+      } else {
+        // Regular user: get only sites they have access to
+        const { data: userSites } = await supabase
+          .from("user_access")
+          .select("site_id")
+          .eq("user_id", user?.id);
+        siteIds = (userSites || []).map((us: any) => us.site_id);
+      }
+
       if (siteIds.length === 0) {
         setSites([]);
         setLoading(false);
