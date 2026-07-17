@@ -753,14 +753,12 @@ function SiteAdminCard({
                   <img src={logoUrl} alt="logo preview" className="h-8 object-contain" />
                 </div>
               )}
-              {logoUrl && (
-                <Input 
-                  className="h-8 text-xs" 
-                  value={logoUrl} 
-                  readOnly
-                  placeholder="URL will appear here"
-                />
-              )}
+              <Input 
+                className="h-8 text-xs" 
+                value={logoUrl} 
+                onChange={(e) => setLogoUrl(e.target.value)}
+                placeholder="Or paste image URL here"
+              />
             </div>
 
             {/* Background Upload */}
@@ -783,14 +781,12 @@ function SiteAdminCard({
                   />
                 </label>
               </div>
-              {backgroundUrl && (
-                <Input 
-                  className="h-8 text-xs" 
-                  value={backgroundUrl} 
-                  readOnly
-                  placeholder="URL will appear here"
-                />
-              )}
+              <Input 
+                className="h-8 text-xs" 
+                value={backgroundUrl} 
+                onChange={(e) => setBackgroundUrl(e.target.value)}
+                placeholder="Or paste image URL here"
+              />
             </div>
 
             {/* Color Pickers */}
