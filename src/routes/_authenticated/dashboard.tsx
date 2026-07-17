@@ -1,386 +1,283 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Activity, Droplets, FlaskConical, Gauge, Plus, Radio } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
+import { Activity, AlertTriangle, Droplets, Gauge, Radio, TrendingUp, MapPin, Loader2 } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 
-export const Route = createFileRoute("/_authenticated/dashboard")({ component: DashboardPage });
+export const Route = createFileRoute("/_authenticated/dashboard")({
+  component: DashboardPage,
+});
 
-interface SiteOverview {
-  id: string; name: string; location: string | null;
-  logo_url?: string | null;
-  primary_color?: string;
-  secondary_color?: string;
-  accent_color?: string;
-  background_url?: string | null;
-  wash_today: number; wash_total: number;
-  fresh_today: number;
-  chemicals_low: number; chemicals_total: number;
-  last_seen: string | null;
-}
-
-interface MeterInfo {
+interface SiteMetric {
   id: string;
-  site_id: string;
-  meter_type: "wash" | "fresh_water" | "chemical" | "chemical_flow";
   name: string;
-  unit: string;
-  low_threshold: number | null;
-  capacity: number | null;
-}
-
-interface ActivityRow {
-  id: string;
-  site_id: string;
-  site_name: string;
-  meter_id: string;
-  meter_name: string;
-  meter_type: MeterInfo["meter_type"];
-  unit: string;
-  value: number;
-  recorded_at: string;
+  location: string | null;
+  logo_url: string | null;
+  online: boolean;
+  wash_today: number;
+  wash_total: number;
+  fresh_today: number;
+  chemicals_total: number;
+  chemicals_low: number;
 }
 
 function DashboardPage() {
-  const { isAdmin } = useAuth();
-  const [sites, setSites] = useState<SiteOverview[] | null>(null);
-  const [meters, setMeters] = useState<MeterInfo[]>([]);
-  const [activity, setActivity] = useState<ActivityRow[]>([]);
-  const [now, setNow] = useState(() => Date.now());
-  const metersRef = useRef<MeterInfo[]>([]);
-  const sitesRef = useRef<SiteOverview[] | null>(null);
-  useEffect(() => { metersRef.current = meters; }, [meters]);
-  useEffect(() => { sitesRef.current = sites; }, [sites]);
+  const { user, loading: authLoading } = useAuth();
+  const [sites, setSites] = useState<SiteMetric[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // ticking clock for "last seen" pills
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
+    if (authLoading) return;
+    loadDashboard();
+  }, [authLoading]);
 
-  const load = async () => {
-    const { data: siteRows } = await supabase
-      .from("sites").select("id,name,location,logo_url,primary_color,secondary_color,accent_color,background_url").order("name");
-    if (!siteRows) { setSites([]); return; }
+  const loadDashboard = async () => {
+    try {
+      const { data: userSites } = await supabase
+        .from("user_access")
+        .select("site_id")
+        .eq("user_id", user?.id);
 
-    const startOfDay = new Date(); startOfDay.setHours(0,0,0,0);
+      const siteIds = (userSites || []).map((us: any) => us.site_id);
+      if (siteIds.length === 0) {
+        setSites([]);
+        setLoading(false);
+        return;
+      }
 
-    const { data: allMeters } = await supabase
-      .from("site_meters")
-      .select("id,site_id,meter_type,name,unit,capacity,low_threshold");
-    setMeters((allMeters as any) ?? []);
+      const { data: sitesData } = await supabase
+        .from("sites")
+        .select("id, name, location, logo_url")
+        .in("id", siteIds);
 
-    const overviews: SiteOverview[] = await Promise.all(siteRows.map(async (s) => {
-      const meters = (allMeters ?? []).filter((m: any) => m.site_id === s.id);
+      if (!sitesData) {
+        setSites([]);
+        setLoading(false);
+        return;
+      }
 
-      const meterIds = meters.map((m: any) => m.id);
-      let washToday = 0, washTotal = 0, freshToday = 0, chemLow = 0, chemTotal = 0;
-      let lastSeen: string | null = null;
+      const metricsPromises = sitesData.map(async (site) => {
+        const { data: latest } = await supabase
+          .from("readings")
+          .select("meter_id, value, recorded_at")
+          .eq("site_id", site.id)
+          .order("recorded_at", { ascending: false })
+          .limit(50);
 
-      if (meterIds.length > 0) {
-        // Fetch latest (by recorded_at) readings for determining last_seen and chemical statuses
-       const { data: latest } = await supabase
-  .rpc("get_latest_readings_for_site", { p_site_id: s.id });
+        const { data: meters } = await supabase
+          .from("meters")
+          .select("id, meter_type")
+          .eq("site_id", site.id);
 
-        const latestByMeter = new Map<string, { value: number; recorded_at: string; reading_type?: string }>();
-        (latest ?? []).forEach((r: any) => {
-          if (!latestByMeter.has(r.meter_id)) latestByMeter.set(r.meter_id, { value: Number(r.value), recorded_at: r.recorded_at, reading_type: r.reading_type });
+        let washToday = 0, washTotal = 0, freshToday = 0, chemLow = 0, chemTotal = 0;
+        let lastSeen = "";
+
+        const meterMap = new Map(meters?.map((m: any) => [m.id, m]) || []);
+        const latestByMeter = new Map<string, any>();
+
+        (latest || []).forEach((r: any) => {
+          if (!latestByMeter.has(r.meter_id)) {
+            latestByMeter.set(r.meter_id, r);
+          }
           if (!lastSeen || r.recorded_at > lastSeen) lastSeen = r.recorded_at;
         });
 
-        for (const m of meters as any[]) {
-          if (m.meter_type === "chemical") {
-            chemTotal++;
-            const v = latestByMeter.get(m.id)?.value;
-            if (v !== undefined && Number(v) >= 1) chemLow++;
-          }
-        }
-
-        const washMeterIds = (meters as any[]).filter((m) => m.meter_type === "wash").map((m) => m.id);
-        const freshMeterIds = (meters as any[]).filter((m) => m.meter_type === "fresh_water").map((m) => m.id);
-
-        // Fetch totals and today readings for wash meters
-        (latest ?? []).forEach((r: any) => {
-          const meter = meters?.find((m: any) => m.id === r.meter_id);
+        latestByMeter.forEach((r, meterId) => {
+          const meter = meterMap.get(meterId);
           if (!meter) return;
-          
+
           if (meter.meter_type === "wash") {
+            washToday = Number(r.value);
             washTotal = Math.max(washTotal, Number(r.value));
-            washToday = Number(r.value); // Latest wash value is today's count
           } else if (meter.meter_type === "fresh_water") {
-            freshToday = Number(r.value); // Latest fresh water value
+            freshToday = Number(r.value);
+          } else if (meter.meter_type === "chemical") {
+            chemTotal++;
+            if (Number(r.value) >= 1) chemLow++;
           }
         });
-      }
 
-      return {
-        id: s.id,
-        name: s.name,
-        location: s.location ?? null,
-        logo_url: s.logo_url,
-        primary_color: s.primary_color,
-        secondary_color: s.secondary_color,
-        accent_color: s.accent_color,
-        background_url: s.background_url,
-        wash_today: washToday,
-        wash_total: washTotal,
-        fresh_today: freshToday,
-        chemicals_low: chemLow,
-        chemicals_total: chemTotal,
-        last_seen: lastSeen,
-      } as SiteOverview;
-    }));
+        const now = new Date().getTime();
+        const lastSeenTime = lastSeen ? new Date(lastSeen).getTime() : 0;
+        const online = now - lastSeenTime < 5 * 60 * 1000;
 
-    setSites(overviews);
-  };
+        return {
+          id: site.id,
+          name: site.name,
+          location: site.location,
+          logo_url: site.logo_url,
+          online,
+          wash_today: washToday,
+          wash_total: washTotal,
+          fresh_today: freshToday,
+          chemicals_total: chemTotal,
+          chemicals_low: chemLow,
+        };
+      });
 
-  // Apply a new reading event to local state without re-fetching everything.
-  const applyReading = (r: { meter_id: string; site_id: string; value: number; recorded_at: string }) => {
-    const meter = metersRef.current.find((m) => m.id === r.meter_id);
-    if (!meter) { load(); return; }
-
-    const site = sitesRef.current?.find((s) => s.id === r.site_id);
-    if (site) {
-      setActivity((prev) => [{
-        id: `${r.meter_id}-${r.recorded_at}-${Math.random().toString(36).slice(2,6)}`,
-        site_id: r.site_id,
-        site_name: site.name,
-        meter_id: r.meter_id,
-        meter_name: meter.name,
-        meter_type: meter.meter_type,
-        unit: meter.unit,
-        value: Number(r.value),
-        recorded_at: r.recorded_at,
-      }, ...prev].slice(0, 25));
+      const results = await Promise.all(metricsPromises);
+      setSites(results.sort((a, b) => a.name.localeCompare(b.name)));
+    } catch (e) {
+      console.error("Failed to load dashboard:", e);
+    } finally {
+      setLoading(false);
     }
-
-    setSites((prev) => prev?.map((s) => {
-      if (s.id !== r.site_id) return s;
-      const next = { ...s, last_seen: r.recorded_at };
-      const startOfDay = new Date(); startOfDay.setHours(0,0,0,0);
-      const isToday = new Date(r.recorded_at) >= startOfDay;
-      if (meter.meter_type === "wash") {
-        next.wash_total = s.wash_total + Number(r.value);
-        if (isToday) next.wash_today = s.wash_today + Number(r.value);
-      } else if (meter.meter_type === "fresh_water") {
-        if (isToday) next.fresh_today = s.fresh_today + Number(r.value);
-      } else if (meter.meter_type === "chemical") {
-        const isLow = Number(r.value) >= 1;
-        const others = s.chemicals_low;
-        next.chemicals_low = Math.min(s.chemicals_total, isLow ? Math.max(others, 1) : Math.max(0, others - 1));
-        setTimeout(load, 250);
-      }
-      return next;
-    }) ?? prev);
   };
 
-  useEffect(() => {
-    load();
-    const ch = supabase.channel("readings-live")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "readings" }, (payload) => {
-        const row = payload.new as any;
-        applyReading({
-          meter_id: row.meter_id,
-          site_id: row.site_id,
-          value: Number(row.value),
-          recorded_at: row.recorded_at,
-        });
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-end justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Live sites</h1>
-          <p className="text-sm text-muted-foreground">Real-time view across all your wash sites.</p>
-        </div>
-        <div className="flex gap-2">
-          <Link to="/chemical-report"><Button variant="outline" size="sm"><FlaskConical className="h-4 w-4 mr-2" /> Chemical Report</Button></Link>
-          <Link to="/admin"><Button variant="outline" size="sm"><Plus className="h-4 w-4" /> Manage sites</Button></Link>
+  if (authLoading || loading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        <div className="h-10 w-48 bg-slate-200 rounded animate-pulse mb-8" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="h-64 bg-slate-100 rounded-lg animate-pulse" />
+          ))}
         </div>
       </div>
+    );
+  }
 
-      {sites === null ? (
-        <div className="text-muted-foreground">Loading…</div>
-      ) : sites.length === 0 ? (
-        <EmptyState isAdmin={isAdmin} />
+  return (
+    <div className="max-w-7xl mx-auto px-4 py-8">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-4xl font-bold tracking-tight text-slate-900">Operations Dashboard</h1>
+        <p className="text-slate-600 mt-2">Real-time monitoring of all wash sites</p>
+      </div>
+
+      {/* Sites Grid */}
+      {sites.length === 0 ? (
+        <div className="text-center py-16 bg-slate-50 rounded-xl border border-slate-200">
+          <p className="text-slate-500 text-lg">No sites configured yet</p>
+        </div>
       ) : (
-        <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {sites.map((s) => <SiteCard key={s.id} s={s} now={now} />)}
-          </div>
-
-          <ActivityFeed activity={activity} now={now} />
-        </>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {sites.map((site) => (
+            <SiteCard key={site.id} site={site} />
+          ))}
+        </div>
       )}
     </div>
   );
 }
 
-function formatAgo(ts: string | null, now: number): { label: string; online: boolean } {
-  if (!ts) return { label: "never", online: false };
-  const delta = Math.max(0, Math.floor((now - new Date(ts).getTime()) / 1000));
-  const online = delta < 60;
-  if (delta < 5) return { label: "just now", online };
-  if (delta < 60) return { label: `${delta}s ago`, online };
-  if (delta < 3600) return { label: `${Math.floor(delta/60)}m ago`, online };
-  if (delta < 86400) return { label: `${Math.floor(delta/3600)}h ago`, online };
-  return { label: `${Math.floor(delta/86400)}d ago`, online };
-}
+function SiteCard({ site }: { site: SiteMetric }) {
+  const chemicalHealthy = site.chemicals_total === 0 || site.chemicals_low === 0;
 
-function SiteCard({ s, now }: { s: SiteOverview; now: number }) {
-  const { label: lastSeenLabel, online } = formatAgo(s.last_seen, now);
   return (
-    <Link to="/sites/$siteId" params={{ siteId: s.id }} className="group">
-      <div 
-        className="rounded-xl border border-border bg-card p-5 shadow-card transition-all hover:shadow-glow overflow-hidden"
-        style={{
-          borderColor: s.primary_color ? `${s.primary_color}40` : undefined,
-          backgroundImage: s.background_url ? `url(${s.background_url})` : undefined,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-        }}
-      >
-        {/* Dark overlay for readability if background exists */}
-        {s.background_url && (
-          <div className="absolute inset-0 bg-black/40 rounded-xl pointer-events-none" />
-        )}
-        <div className="relative z-10">
-          {/* Logo if present */}
-          {s.logo_url && (
-            <div className="mb-3 pb-3 border-b border-border/50">
-              <img src={s.logo_url} alt={s.name} className="h-6 object-contain" />
-            </div>
-          )}
-          
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="font-semibold truncate">{s.name}</div>
-              {s.location && <div className="text-xs text-muted-foreground truncate">{s.location}</div>}
-            </div>
-            <div className={`shrink-0 px-2 py-1 rounded-md text-[11px] font-medium flex items-center gap-1.5 ${
-              online ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"
-            }`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${online ? "bg-success animate-pulse" : "bg-muted-foreground/40"}`} />
-              {online ? "Live" : "Offline"} · {lastSeenLabel}
-            </div>
-          </div>
-          <div className="mt-4 grid grid-cols-3 gap-2">
-            <Mini icon={Gauge} label="Today" value={s.wash_today.toLocaleString()} color={s.primary_color} />
-            <Mini icon={Activity} label="Lifetime" value={s.wash_total.toLocaleString()} color={s.secondary_color} />
-            <Mini icon={Droplets} label="Fresh L" value={s.fresh_today.toFixed(0)} color={s.accent_color} />
-          </div>
-          <div className="mt-3 text-xs flex items-center gap-1.5">
-            <FlaskConical className="h-3.5 w-3.5 text-muted-foreground" />
-            {s.chemicals_total === 0 ? (
-              <span className="text-muted-foreground">No chemical meters</span>
-            ) : s.chemicals_low > 0 ? (
-              <span className="text-destructive font-medium">{s.chemicals_low} of {s.chemicals_total} chemicals low</span>
-            ) : (
-              <span className="text-success">All {s.chemicals_total} chemicals healthy</span>
+    <Link to="/sites/$siteId" params={{ siteId: site.id }}>
+      <div className="group relative bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-all h-full cursor-pointer overflow-hidden">
+        {/* Top bar with status */}
+        <div className="absolute top-0 left-0 right-0 h-1 bg-slate-200">
+          <div
+            className={`h-full transition-all ${site.online ? "bg-emerald-500 w-full" : "bg-slate-400 w-1/4"}`}
+          />
+        </div>
+
+        <div className="p-6 pt-8">
+          {/* Logo & Header */}
+          <div className="flex items-start gap-4 mb-6">
+            {site.logo_url && (
+              <div className="flex-shrink-0 w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center overflow-hidden">
+                <img
+                  src={site.logo_url}
+                  alt={site.name}
+                  className="w-full h-full object-contain p-1"
+                />
+              </div>
             )}
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-slate-900 text-lg truncate">{site.name}</h3>
+              {site.location && (
+                <div className="flex items-center gap-1 text-sm text-slate-500 mt-1">
+                  <MapPin className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span className="truncate">{site.location}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Status Badge */}
+          <div className="flex items-center gap-2 mb-6 text-sm">
+            <Radio
+              className={`h-3 w-3 ${
+                site.online ? "text-emerald-500 fill-emerald-500" : "text-slate-300 fill-slate-300"
+              }`}
+            />
+            <span className={site.online ? "text-emerald-600 font-medium" : "text-slate-500"}>
+              {site.online ? "Live" : "Offline"}
+            </span>
+          </div>
+
+          {/* Metrics Grid */}
+          <div className="grid grid-cols-2 gap-3 mb-6">
+            {/* Wash Today */}
+            <div className="bg-slate-50 rounded-lg p-4 border border-slate-100">
+              <div className="flex items-center gap-2 mb-2">
+                <Gauge className="h-4 w-4 text-slate-600" />
+                <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Today</span>
+              </div>
+              <div className="text-2xl font-bold text-slate-900">{site.wash_today}</div>
+              <div className="text-xs text-slate-500 mt-1">washes</div>
+            </div>
+
+            {/* Lifetime */}
+            <div className="bg-slate-50 rounded-lg p-4 border border-slate-100">
+              <div className="flex items-center gap-2 mb-2">
+                <TrendingUp className="h-4 w-4 text-slate-600" />
+                <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Total</span>
+              </div>
+              <div className="text-2xl font-bold text-slate-900">{(site.wash_total / 1000).toFixed(1)}k</div>
+              <div className="text-xs text-slate-500 mt-1">lifetime</div>
+            </div>
+
+            {/* Fresh Water */}
+            <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
+              <div className="flex items-center gap-2 mb-2">
+                <Droplets className="h-4 w-4 text-blue-600" />
+                <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Fresh</span>
+              </div>
+              <div className="text-2xl font-bold text-blue-900">{site.fresh_today.toFixed(0)}</div>
+              <div className="text-xs text-blue-600 mt-1">liters</div>
+            </div>
+
+            {/* Chemicals */}
+            <div
+              className={`rounded-lg p-4 border ${
+                chemicalHealthy
+                  ? "bg-emerald-50 border-emerald-100"
+                  : "bg-amber-50 border-amber-100"
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                {chemicalHealthy ? (
+                  <Activity className="h-4 w-4 text-emerald-600" />
+                ) : (
+                  <AlertTriangle className="h-4 w-4 text-amber-600" />
+                )}
+                <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Chem</span>
+              </div>
+              <div className={`text-2xl font-bold ${chemicalHealthy ? "text-emerald-700" : "text-amber-700"}`}>
+                {site.chemicals_total === 0 ? "—" : chemicalHealthy ? "✓" : site.chemicals_low}
+              </div>
+              <div className={`text-xs mt-1 ${chemicalHealthy ? "text-emerald-600" : "text-amber-600"}`}>
+                {site.chemicals_total === 0
+                  ? "no meters"
+                  : chemicalHealthy
+                  ? "all ok"
+                  : `${site.chemicals_low} low`}
+              </div>
+            </div>
+          </div>
+
+          {/* View Details Link */}
+          <div className="flex items-center justify-between text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors pt-4 border-t border-slate-100">
+            <span className="mt-4">View details</span>
+            <span className="text-lg group-hover:translate-x-1 transition-transform mt-4">→</span>
           </div>
         </div>
       </div>
     </Link>
-  );
-}
-
-function Mini({ icon: Icon, label, value, color }: { icon: typeof Gauge; label: string; value: string; color?: string }) {
-  return (
-    <div 
-      className="rounded-md bg-secondary/60 p-2 transition-colors"
-      style={color ? {
-        backgroundColor: `${color}15`,
-      } : undefined}
-    >
-      <div 
-        className="flex items-center gap-1 text-[10px] uppercase tracking-wide font-medium"
-        style={color ? {
-          color: color,
-        } : undefined}
-      >
-        <Icon className="h-3 w-3" />{label}
-      </div>
-      <div 
-        className="text-base font-semibold tabular-nums mt-0.5"
-        style={color ? {
-          color: color,
-        } : undefined}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function ActivityFeed({ activity, now }: { activity: ActivityRow[]; now: number }) {
-  return (
-    <div className="rounded-xl border border-border bg-card shadow-card overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <div className="flex items-center gap-2">
-          <Radio className="h-4 w-4 text-success animate-pulse" />
-          <h2 className="font-semibold text-sm">Live activity</h2>
-        </div>
-        <span className="text-[11px] text-muted-foreground">{activity.length} recent event{activity.length === 1 ? "" : "s"}</span>
-      </div>
-      {activity.length === 0 ? (
-        <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-          Waiting for incoming readings…
-        </div>
-      ) : (
-        <ul className="divide-y divide-border max-h-80 overflow-y-auto">
-          {activity.map((a) => {
-            const { label } = formatAgo(a.recorded_at, now);
-            const display = a.meter_type === "wash"
-              ? `+${Math.round(a.value)} wash${Math.round(a.value) === 1 ? "" : "es"}`
-              : a.meter_type === "fresh_water"
-                ? `+${a.value.toFixed(1)} L`
-                : a.meter_type === "chemical"
-                  ? (Number(a.value) >= 1 ? "⚠ Chemical LOW" : "✓ Chemical OK")
-                  : `+${a.value.toFixed(2)} ${a.unit}`;
-            const tone = a.meter_type === "chemical"
-              ? (Number(a.value) >= 1 ? "text-destructive" : "text-success")
-              : "text-foreground";
-            return (
-              <li key={a.id} className="px-4 py-2.5 flex items-center justify-between gap-3 text-sm">
-                <div className="min-w-0">
-                  <div className="font-medium truncate">{a.site_name}</div>
-                  <div className="text-xs text-muted-foreground truncate">{a.meter_name}</div>
-                </div>
-                <div className="text-right shrink-0">
-                  <div className={`font-semibold tabular-nums ${tone}`}>{display}</div>
-                  <div className="text-[11px] text-muted-foreground">{label}</div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function EmptyState({ isAdmin }: { isAdmin: boolean }) {
-  return (
-    <div className="rounded-xl border border-dashed border-border bg-card/40 p-12 text-center">
-      <div className="mx-auto h-12 w-12 rounded-xl bg-accent grid place-items-center mb-3">
-        <Activity className="h-6 w-6 text-primary" />
-      </div>
-      <h3 className="font-semibold">No sites yet</h3>
-      <p className="text-sm text-muted-foreground mt-1">
-        {isAdmin ? "Create your first site and add meters to start streaming live data." : "Ask an admin to assign you to a site."}
-      </p>
-      {isAdmin && (
-        <Link to="/admin" className="inline-block mt-4">
-          <Button><Plus className="h-4 w-4" /> Create site</Button>
-        </Link>
-      )}
-    </div>
   );
 }
