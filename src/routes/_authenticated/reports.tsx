@@ -287,120 +287,125 @@ function ReportsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Reports</h1>
-        <p className="text-sm text-muted-foreground">View and export site usage and chemical events.</p>
+    <div className="max-w-7xl mx-auto px-4 py-8">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-4xl font-bold tracking-tight text-slate-900">Reports</h1>
+        <p className="text-slate-600 mt-2">Download comprehensive data reports for your sites.</p>
       </div>
 
       {/* Report Type Tabs */}
-      <div className="flex gap-2 border-b border-border">
+      <div className="flex gap-0 border-b border-slate-200 mb-8">
         <button
           onClick={() => setReportType("usage")}
-          className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+          className={`px-4 py-3 font-semibold text-sm border-b-2 transition-colors ${
             reportType === "usage"
-              ? "border-primary text-primary"
-              : "border-transparent text-muted-foreground hover:text-foreground"
+              ? "border-blue-500 text-blue-600"
+              : "border-transparent text-slate-500 hover:text-slate-700"
           }`}
         >
+          <Download className="inline h-4 w-4 mr-2" />
           Usage Report
         </button>
         <button
           onClick={() => setReportType("chemical")}
-          className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 ${
+          className={`px-4 py-3 font-semibold text-sm border-b-2 transition-colors flex items-center gap-2 ${
             reportType === "chemical"
-              ? "border-primary text-primary"
-              : "border-transparent text-muted-foreground hover:text-foreground"
+              ? "border-blue-500 text-blue-600"
+              : "border-transparent text-slate-500 hover:text-slate-700"
           }`}
         >
-          <Beaker className="h-4 w-4" /> Chemical Events
+          <Beaker className="h-4 w-4" />
+          Chemical Events
         </button>
       </div>
 
       {/* Usage Report Tab */}
       {reportType === "usage" && (
-        <div className="rounded-xl border border-border bg-card p-5 shadow-card space-y-4 max-w-2xl">
-          <div className="space-y-1.5">
-            <Label>Site</Label>
-            <Select value={siteId} onValueChange={setSiteId}>
-              <SelectTrigger><SelectValue placeholder="Select a site" /></SelectTrigger>
-              <SelectContent>
-                {sites.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Period</Label>
-            <Select value={period} onValueChange={(v) => setPeriod(v as "daily" | "monthly")}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="daily">Daily (hour-by-hour)</SelectItem>
-                <SelectItem value="monthly">Monthly (day-by-day)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {period === "daily" ? (
-            <div className="space-y-1.5">
-              <Label>Date</Label>
-              <Input type="date" value={day} onChange={(e) => setDay(e.target.value)} />
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6 max-w-2xl">
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold text-slate-700">Site</Label>
+              <Select value={siteId} onValueChange={setSiteId}>
+                <SelectTrigger className="bg-white border-slate-200"><SelectValue placeholder="Select a site" /></SelectTrigger>
+                <SelectContent>
+                  {sites.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
-          ) : (
-            <div className="space-y-1.5">
-              <Label>Month</Label>
-              <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
+
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold text-slate-700">Period</Label>
+              <Select value={period} onValueChange={(v) => setPeriod(v as "daily" | "monthly")}>
+                <SelectTrigger className="bg-white border-slate-200"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="daily">Daily (hour-by-hour)</SelectItem>
+                  <SelectItem value="monthly">Monthly (day-by-day)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-          )}
 
-          <Button onClick={generateUsageReport} disabled={busy} className="w-full sm:w-auto">
-            {busy ? <><FileDown className="h-4 w-4 animate-pulse" /> Generating…</> : <><Download className="h-4 w-4" /> Download CSV</>}
-          </Button>
+            {period === "daily" ? (
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold text-slate-700">Date</Label>
+                <Input type="date" value={day} onChange={(e) => setDay(e.target.value)} className="bg-white border-slate-200" />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold text-slate-700">Month</Label>
+                <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="bg-white border-slate-200" />
+              </div>
+            )}
 
-          <p className="text-xs text-muted-foreground">
-            Wash & water values are summed within each bucket. Chemical levels show the latest reading in each bucket.
-          </p>
+            <Button onClick={generateUsageReport} disabled={busy} className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold h-10">
+              {busy ? <><FileDown className="h-4 w-4 animate-pulse mr-2" /> Generating…</> : <><Download className="h-4 w-4 mr-2" /> Download CSV</>}
+            </Button>
+
+            <p className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg">
+              Wash & water values are summed within each bucket. Chemical levels show the latest reading in each bucket.
+            </p>
+          </div>
         </div>
       )}
 
       {/* Chemical Events Tab */}
       {reportType === "chemical" && (
-        <div className="space-y-4">
-          <div className="rounded-xl border border-border bg-card p-5 shadow-card space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-1.5">
-                <Label>Site</Label>
+        <div className="space-y-6">
+          <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold text-slate-700">Site</Label>
                 <Select value={siteId} onValueChange={setSiteId}>
-                  <SelectTrigger><SelectValue placeholder="Select a site" /></SelectTrigger>
+                  <SelectTrigger className="bg-white border-slate-200"><SelectValue placeholder="Select a site" /></SelectTrigger>
                   <SelectContent>
                     {sites.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
 
-              <div className="space-y-1.5">
-                <Label>Start Date</Label>
-                <Input type="date" value={chemStartDate} onChange={(e) => setChemStartDate(e.target.value)} />
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold text-slate-700">Start Date</Label>
+                <Input type="date" value={chemStartDate} onChange={(e) => setChemStartDate(e.target.value)} className="bg-white border-slate-200" />
               </div>
 
-              <div className="space-y-1.5">
-                <Label>End Date</Label>
-                <Input type="date" value={chemEndDate} onChange={(e) => setChemEndDate(e.target.value)} />
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold text-slate-700">End Date</Label>
+                <Input type="date" value={chemEndDate} onChange={(e) => setChemEndDate(e.target.value)} className="bg-white border-slate-200" />
               </div>
             </div>
 
             {chemicalEvents.length > 0 && (
-              <div className="flex gap-2 items-center">
-                <Button onClick={downloadChemicalReport} className="w-full sm:w-auto">
+              <div className="flex gap-2 items-center pt-4 border-t border-slate-200">
+                <Button onClick={downloadChemicalReport} className="bg-blue-500 hover:bg-blue-600 text-white font-semibold">
                   <Download className="h-4 w-4 mr-2" /> Export CSV
                 </Button>
-                <div className="flex gap-1 border border-border rounded-lg p-1">
+                <div className="flex gap-1 border border-slate-200 rounded-lg p-1 bg-slate-50">
                   <button
                     onClick={() => setChemicalViewMode("cards")}
                     className={`p-2 rounded transition-colors ${
                       chemicalViewMode === "cards"
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:text-foreground"
+                        ? "bg-blue-500 text-white"
+                        : "text-slate-600 hover:text-slate-900"
                     }`}
                     title="Card view"
                   >
@@ -410,8 +415,8 @@ function ReportsPage() {
                     onClick={() => setChemicalViewMode("table")}
                     className={`p-2 rounded transition-colors ${
                       chemicalViewMode === "table"
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:text-foreground"
+                        ? "bg-blue-500 text-white"
+                        : "text-slate-600 hover:text-slate-900"
                     }`}
                     title="Table view"
                   >
@@ -424,72 +429,68 @@ function ReportsPage() {
 
           {/* Chemical Events - Card View (Timeline) */}
           {chemicalViewMode === "cards" && chemicalEvents.length > 0 ? (
-            <div className="space-y-3">
-              <div className="text-xs font-semibold text-muted-foreground px-1">
+            <div className="space-y-4">
+              <div className="text-sm font-semibold text-slate-700 px-1">
                 {chemicalEvents.length} event{chemicalEvents.length === 1 ? "" : "s"}
               </div>
-              {chemicalEvents.map((evt, idx) => {
+              {chemicalEvents.map((evt) => {
                 const isStillLow = !evt.topped_up_at;
                 return (
                   <div
                     key={evt.id}
-                    className={`rounded-xl border-2 p-4 transition-all ${
+                    className={`rounded-lg border-l-4 p-4 ${
                       isStillLow
-                        ? "border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 dark:border-amber-700/50"
-                        : "border-green-200 bg-green-50/50 dark:bg-green-950/20 dark:border-green-700/50"
+                        ? "border-l-amber-500 bg-amber-50 border border-amber-100"
+                        : "border-l-emerald-500 bg-emerald-50 border border-emerald-100"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-4 mb-3">
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-semibold text-base leading-tight mb-1">{evt.meter_name}</h4>
+                      <div className="flex-1">
+                        <h4 className="font-semibold text-slate-900 text-base mb-2">{evt.meter_name}</h4>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md ${
+                          <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded ${
                             isStillLow
-                              ? "bg-amber-200/50 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200"
-                              : "bg-green-200/50 text-green-900 dark:bg-green-900/50 dark:text-green-200"
+                              ? "bg-amber-200 text-amber-900"
+                              : "bg-emerald-200 text-emerald-900"
                           }`}>
                             {isStillLow ? (
                               <>
                                 <AlertTriangle className="h-3 w-3" />
-                                Still Low
+                                STILL LOW
                               </>
                             ) : (
                               <>
                                 <CheckCircle2 className="h-3 w-3" />
-                                Topped Up
+                                RESOLVED
                               </>
                             )}
                           </span>
-                          <span className="text-xs text-muted-foreground">
+                          <span className={`text-xs font-medium ${isStillLow ? "text-amber-700" : "text-emerald-700"}`}>
                             {formatDuration(evt.went_low_at, evt.topped_up_at)}
                           </span>
                         </div>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3 pb-3 border-b border-border/50">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-200">
                       <div className="space-y-1">
-                        <div className="text-xs text-muted-foreground font-medium">Went Low</div>
-                        <div className="text-sm font-medium">{new Date(evt.went_low_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                        <div className="text-xs text-slate-600 font-medium uppercase tracking-wide">Went Low</div>
+                        <div className="text-sm font-semibold text-slate-900">{new Date(evt.went_low_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
                       </div>
                       <div className="space-y-1">
-                        <div className="text-xs text-muted-foreground font-medium">Topped Up</div>
-                        <div className="text-sm font-medium">
+                        <div className="text-xs text-slate-600 font-medium uppercase tracking-wide">Topped</div>
+                        <div className="text-sm font-semibold text-slate-900">
                           {evt.topped_up_at ? new Date(evt.topped_up_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : "Pending"}
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <div className="text-xs text-muted-foreground font-medium">At Low</div>
-                        <div className="text-sm font-mono font-semibold">{evt.wash_count_at_low ?? "-"}</div>
+                        <div className="text-xs text-slate-600 font-medium uppercase tracking-wide">At Low</div>
+                        <div className="text-sm font-mono font-bold text-slate-900">{evt.wash_count_at_low ?? "-"}</div>
                       </div>
                       <div className="space-y-1">
-                        <div className="text-xs text-muted-foreground font-medium">During</div>
-                        <div className="text-sm font-mono font-semibold text-primary">{evt.washes_during_low}</div>
+                        <div className="text-xs text-slate-600 font-medium uppercase tracking-wide">During</div>
+                        <div className="text-sm font-mono font-bold text-blue-600">{evt.washes_during_low}</div>
                       </div>
-                    </div>
-
-                    <div className="text-xs text-muted-foreground">
-                      Wash #{evt.wash_count_at_low ?? "?"} → #{evt.wash_count_at_topup ?? "?"}
                     </div>
                   </div>
                 );
