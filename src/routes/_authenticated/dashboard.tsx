@@ -9,6 +9,11 @@ export const Route = createFileRoute("/_authenticated/dashboard")({ component: D
 
 interface SiteOverview {
   id: string; name: string; location: string | null;
+  logo_url?: string | null;
+  primary_color?: string;
+  secondary_color?: string;
+  accent_color?: string;
+  background_url?: string | null;
   wash_today: number; wash_total: number;
   fresh_today: number;
   chemicals_low: number; chemicals_total: number;
@@ -56,7 +61,7 @@ function DashboardPage() {
 
   const load = async () => {
     const { data: siteRows } = await supabase
-      .from("sites").select("id,name,location").order("name");
+      .from("sites").select("id,name,location,logo_url,primary_color,secondary_color,accent_color,background_url").order("name");
     if (!siteRows) { setSites([]); return; }
 
     const startOfDay = new Date(); startOfDay.setHours(0,0,0,0);
@@ -116,6 +121,11 @@ function DashboardPage() {
         id: s.id,
         name: s.name,
         location: s.location ?? null,
+        logo_url: s.logo_url,
+        primary_color: s.primary_color,
+        secondary_color: s.secondary_color,
+        accent_color: s.accent_color,
+        background_url: s.background_url,
         wash_today: washToday,
         wash_total: washTotal,
         fresh_today: freshToday,
@@ -230,7 +240,19 @@ function SiteCard({ s, now }: { s: SiteOverview; now: number }) {
   const { label: lastSeenLabel, online } = formatAgo(s.last_seen, now);
   return (
     <Link to="/sites/$siteId" params={{ siteId: s.id }} className="group">
-      <div className="rounded-xl border border-border bg-card p-5 shadow-card transition-all hover:border-primary/50 hover:shadow-glow">
+      <div 
+        className="rounded-xl border border-border bg-card p-5 shadow-card transition-all hover:shadow-glow"
+        style={{
+          borderColor: s.primary_color ? `${s.primary_color}40` : undefined,
+        }}
+      >
+        {/* Logo if present */}
+        {s.logo_url && (
+          <div className="mb-3 pb-3 border-b border-border/50">
+            <img src={s.logo_url} alt={s.name} className="h-6 object-contain" />
+          </div>
+        )}
+        
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="font-semibold truncate">{s.name}</div>
@@ -244,9 +266,9 @@ function SiteCard({ s, now }: { s: SiteOverview; now: number }) {
           </div>
         </div>
         <div className="mt-4 grid grid-cols-3 gap-2">
-          <Mini icon={Gauge} label="Today" value={s.wash_today.toLocaleString()} />
-          <Mini icon={Activity} label="Lifetime" value={s.wash_total.toLocaleString()} />
-          <Mini icon={Droplets} label="Fresh L" value={s.fresh_today.toFixed(0)} />
+          <Mini icon={Gauge} label="Today" value={s.wash_today.toLocaleString()} color={s.primary_color} />
+          <Mini icon={Activity} label="Lifetime" value={s.wash_total.toLocaleString()} color={s.secondary_color} />
+          <Mini icon={Droplets} label="Fresh L" value={s.fresh_today.toFixed(0)} color={s.accent_color} />
         </div>
         <div className="mt-3 text-xs flex items-center gap-1.5">
           <FlaskConical className="h-3.5 w-3.5 text-muted-foreground" />
@@ -263,13 +285,30 @@ function SiteCard({ s, now }: { s: SiteOverview; now: number }) {
   );
 }
 
-function Mini({ icon: Icon, label, value }: { icon: typeof Gauge; label: string; value: string }) {
+function Mini({ icon: Icon, label, value, color }: { icon: typeof Gauge; label: string; value: string; color?: string }) {
   return (
-    <div className="rounded-md bg-secondary/60 p-2">
-      <div className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+    <div 
+      className="rounded-md bg-secondary/60 p-2 transition-colors"
+      style={{
+        backgroundColor: color ? `${color}15` : undefined,
+      }}
+    >
+      <div 
+        className="flex items-center gap-1 text-[10px] uppercase tracking-wide font-medium"
+        style={{
+          color: color || undefined,
+        }}
+      >
         <Icon className="h-3 w-3" />{label}
       </div>
-      <div className="text-base font-semibold tabular-nums mt-0.5">{value}</div>
+      <div 
+        className="text-base font-semibold tabular-nums mt-0.5"
+        style={{
+          color: color || undefined,
+        }}
+      >
+        {value}
+      </div>
     </div>
   );
 }
