@@ -531,14 +531,9 @@ function SiteAdminCard({
   const [low, setLow] = useState("");
   const [group, setGroup] = useState("");
   
-  // Branding state
-  const [primaryColor, setPrimaryColor] = useState(site.primary_color || "#3b82f6");
-  const [secondaryColor, setSecondaryColor] = useState(site.secondary_color || "#10b981");
-  const [accentColor, setAccentColor] = useState(site.accent_color || "#f59e0b");
+  // Logo upload state
   const [logoUrl, setLogoUrl] = useState(site.logo_url || "");
-  const [backgroundUrl, setBackgroundUrl] = useState(site.background_url || "");
   const [logoUploading, setLogoUploading] = useState(false);
-  const [backgroundUploading, setBackgroundUploading] = useState(false);
 
   const handleLogoUpload = async (file: File) => {
     if (!file) return;
@@ -565,34 +560,6 @@ function SiteAdminCard({
       toast.error(e.message || "Logo upload failed");
     } finally {
       setLogoUploading(false);
-    }
-  };
-
-  const handleBackgroundUpload = async (file: File) => {
-    if (!file) return;
-    setBackgroundUploading(true);
-    try {
-      const ext = file.name.split('.').pop() || 'jpg';
-      const fileName = `${site.id}-bg-${Date.now()}.${ext}`;
-      
-      // Upload to Supabase Storage
-      const { error: uploadErr } = await supabase.storage
-        .from('site-backgrounds')
-        .upload(fileName, file, { upsert: true });
-      
-      if (uploadErr) throw uploadErr;
-      
-      // Get public URL
-      const { data } = supabase.storage
-        .from('site-backgrounds')
-        .getPublicUrl(fileName);
-      
-      setBackgroundUrl(data.publicUrl);
-      toast.success("Background uploaded");
-    } catch (e: any) {
-      toast.error(e.message || "Background upload failed");
-    } finally {
-      setBackgroundUploading(false);
     }
   };
 
@@ -726,125 +693,41 @@ function SiteAdminCard({
 
         <div>
           <div className="flex items-center justify-between mb-4">
-            <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground/80">Site Branding</h4>
+            <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground/80">Site Logo</h4>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2 max-w-xs">
             {/* Logo Upload */}
-            <div className="space-y-2">
-              <Label className="text-xs">Logo</Label>
-              <div className="flex gap-2">
-                <label className="flex-1 cursor-pointer">
-                  <div className="h-8 px-3 py-1 rounded border border-border bg-background hover:bg-muted transition-colors flex items-center justify-center text-xs font-medium text-muted-foreground hover:text-foreground">
-                    {logoUploading ? "Uploading..." : "Choose File"}
-                  </div>
-                  <input 
-                    type="file" 
-                    accept="image/*" 
-                    className="hidden" 
-                    onChange={(e) => {
-                      const file = e.currentTarget.files?.[0];
-                      if (file) handleLogoUpload(file);
-                    }}
-                    disabled={logoUploading}
-                  />
-                </label>
-              </div>
-              {logoUrl && (
-                <div className="h-10 bg-muted rounded border border-border flex items-center px-2">
-                  <img src={logoUrl} alt="logo preview" className="h-8 object-contain" />
+            <Label className="text-xs">Logo Image</Label>
+            <div className="flex gap-2">
+              <label className="flex-1 cursor-pointer">
+                <div className="h-8 px-3 py-1 rounded border border-border bg-background hover:bg-muted transition-colors flex items-center justify-center text-xs font-medium text-muted-foreground hover:text-foreground">
+                  {logoUploading ? "Uploading..." : "Choose File"}
                 </div>
-              )}
-              <Input 
-                className="h-8 text-xs" 
-                value={logoUrl} 
-                onChange={(e) => setLogoUrl(e.target.value)}
-                placeholder="Or paste image URL here"
-              />
-            </div>
-
-            {/* Background Upload */}
-            <div className="space-y-2">
-              <Label className="text-xs">Background</Label>
-              <div className="flex gap-2">
-                <label className="flex-1 cursor-pointer">
-                  <div className="h-8 px-3 py-1 rounded border border-border bg-background hover:bg-muted transition-colors flex items-center justify-center text-xs font-medium text-muted-foreground hover:text-foreground">
-                    {backgroundUploading ? "Uploading..." : "Choose File"}
-                  </div>
-                  <input 
-                    type="file" 
-                    accept="image/*" 
-                    className="hidden" 
-                    onChange={(e) => {
-                      const file = e.currentTarget.files?.[0];
-                      if (file) handleBackgroundUpload(file);
-                    }}
-                    disabled={backgroundUploading}
-                  />
-                </label>
-              </div>
-              <Input 
-                className="h-8 text-xs" 
-                value={backgroundUrl} 
-                onChange={(e) => setBackgroundUrl(e.target.value)}
-                placeholder="Or paste image URL here"
-              />
-            </div>
-
-            {/* Color Pickers */}
-            <div className="space-y-2">
-              <Label className="text-xs">Primary Color</Label>
-              <div className="flex gap-2 items-center">
                 <input 
-                  type="color" 
-                  value={primaryColor} 
-                  onChange={(e) => setPrimaryColor(e.target.value)}
-                  className="h-8 w-12 rounded border border-border cursor-pointer"
+                  type="file" 
+                  accept="image/*" 
+                  className="hidden" 
+                  onChange={(e) => {
+                    const file = e.currentTarget.files?.[0];
+                    if (file) handleLogoUpload(file);
+                  }}
+                  disabled={logoUploading}
                 />
-                <Input 
-                  className="h-8 text-xs flex-1" 
-                  value={primaryColor} 
-                  onChange={(e) => setPrimaryColor(e.target.value)}
-                  placeholder="#3b82f6"
-                />
-              </div>
+              </label>
             </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs">Secondary Color</Label>
-              <div className="flex gap-2 items-center">
-                <input 
-                  type="color" 
-                  value={secondaryColor} 
-                  onChange={(e) => setSecondaryColor(e.target.value)}
-                  className="h-8 w-12 rounded border border-border cursor-pointer"
-                />
-                <Input 
-                  className="h-8 text-xs flex-1" 
-                  value={secondaryColor} 
-                  onChange={(e) => setSecondaryColor(e.target.value)}
-                  placeholder="#10b981"
-                />
+            {logoUrl && (
+              <div className="h-10 bg-muted rounded border border-border flex items-center px-2">
+                <img src={logoUrl} alt="logo preview" className="h-8 object-contain" />
               </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs">Accent Color</Label>
-              <div className="flex gap-2 items-center">
-                <input 
-                  type="color" 
-                  value={accentColor} 
-                  onChange={(e) => setAccentColor(e.target.value)}
-                  className="h-8 w-12 rounded border border-border cursor-pointer"
-                />
-                <Input 
-                  className="h-8 text-xs flex-1" 
-                  value={accentColor} 
-                  onChange={(e) => setAccentColor(e.target.value)}
-                  placeholder="#f59e0b"
-                />
-              </div>
-            </div>
+            )}
+            <Input 
+              className="h-8 text-xs" 
+              value={logoUrl} 
+              onChange={(e) => setLogoUrl(e.target.value)}
+              placeholder="Or paste image URL here"
+            />
+            <p className="text-[10px] text-muted-foreground">PNG or JPG, recommended 200x100px</p>
           </div>
 
           <Button
@@ -852,11 +735,11 @@ function SiteAdminCard({
             className="h-8 px-4 font-bold text-[11px] mt-4"
             onClick={async () => {
               await onUpdateBranding({
-                primary_color: primaryColor,
-                secondary_color: secondaryColor,
-                accent_color: accentColor,
+                primary_color: "",
+                secondary_color: "",
+                accent_color: "",
                 logo_url: logoUrl || null,
-                background_url: backgroundUrl || null,
+                background_url: null,
               });
             }}
           >Save Branding</Button>
