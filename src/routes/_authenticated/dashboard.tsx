@@ -101,20 +101,17 @@ function DashboardPage() {
         const freshMeterIds = (meters as any[]).filter((m) => m.meter_type === "fresh_water").map((m) => m.id);
 
         // Fetch totals and today readings for wash meters
-       (latest ?? []).forEach((r: any) => {
-  if (r.reading_type === "total" && r.device_key?.startsWith("0001")) {
-    washTotal = Number(r.value);
-  }
-  if (r.reading_type === "today" && r.device_key?.startsWith("0001")) {
-    washToday = Number(r.value);
-  }
-});
-
         (latest ?? []).forEach((r: any) => {
-  if (r.reading_type === "today" && r.device_key?.startsWith("0002")) {
-    freshToday = Number(r.value);
-  }
-});
+          const meter = meters?.find((m: any) => m.id === r.meter_id);
+          if (!meter) return;
+          
+          if (meter.meter_type === "wash") {
+            washTotal = Math.max(washTotal, Number(r.value));
+            washToday = Number(r.value); // Latest wash value is today's count
+          } else if (meter.meter_type === "fresh_water") {
+            freshToday = Number(r.value); // Latest fresh water value
+          }
+        });
       }
 
       return {
