@@ -289,23 +289,23 @@ function Mini({ icon: Icon, label, value, color }: { icon: typeof Gauge; label: 
   return (
     <div 
       className="rounded-md bg-secondary/60 p-2 transition-colors"
-      style={{
-        backgroundColor: color ? `${color}15` : undefined,
-      }}
+      style={color ? {
+        backgroundColor: `${color}15`,
+      } : undefined}
     >
       <div 
         className="flex items-center gap-1 text-[10px] uppercase tracking-wide font-medium"
-        style={{
-          color: color || undefined,
-        }}
+        style={color ? {
+          color: color,
+        } : undefined}
       >
         <Icon className="h-3 w-3" />{label}
       </div>
       <div 
         className="text-base font-semibold tabular-nums mt-0.5"
-        style={{
-          color: color || undefined,
-        }}
+        style={color ? {
+          color: color,
+        } : undefined}
       >
         {value}
       </div>
