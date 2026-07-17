@@ -202,6 +202,119 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
       if (method === "POST") return json(await logReport(getSupabaseAdmin(env), { site_id: siteId, ...await request.json() }), 201);
     }
 
+    // ── Email Reports (called by cron hourly) ──────────────
+    if (path === "/api/public/hooks/send-reports" && method === "POST") {
+      const admin = getSupabaseAdmin(env);
+      const smtpSettings = await getSmtpSettings(admin);
+      
+      if (!smtpSettings || !smtpSettings.host) {
+        return json({ error: "SMTP not configured" }, 400);
+      }
+
+      // Get all sites with email subscriptions
+      const { data: subscriptions, error: subError } = await admin
+        .from("email_subscriptions")
+        .select("*");
+      
+      if (subError) {
+        return json({ error: subError.message }, 500);
+      }
+
+      if (!subscriptions || subscriptions.length === 0) {
+        return json({ ok: true, sent: 0, message: "No subscriptions" });
+      }
+
+      let sent = 0;
+      const errors = [];
+
+      for (const sub of subscriptions) {
+        try {
+          // Get latest readings for this site
+          const { data: readings, error: readError } = await admin
+            .from("readings")
+            .select("meter_id, value, recorded_at")
+            .eq("site_id", sub.site_id)
+            .order("recorded_at", { ascending: false })
+            .limit(50);
+
+          if (readError) {
+            errors.push(`Site ${sub.site_id}: ${readError.message}`);
+            continue;
+          }
+
+          // Get site details
+          const { data: site } = await admin
+            .from("sites")
+            .select("name, location")
+            .eq("id", sub.site_id)
+            .single();
+
+          // Get meters
+          const { data: meters } = await admin
+            .from("meters")
+            .select("id, name, meter_type, unit")
+            .eq("site_id", sub.site_id);
+
+          const meterMap = new Map(meters?.map((m: any) => [m.id, m]) || []);
+
+          // Build email content
+          const siteName = site?.name || sub.site_id;
+          const summaryReadings = readings?.slice(0, 10) || [];
+          
+          const htmlContent = `
+            <h2>${siteName} Report</h2>
+            <p>Location: ${site?.location || "Unknown"}</p>
+            <h3>Recent Readings</h3>
+            <ul>
+              ${summaryReadings.map((r: any) => {
+                const meter = meterMap.get(r.meter_id);
+                const value = meter?.meter_type === "chemical" 
+                  ? (r.value >= 1 ? "LOW" : "OK")
+                  : `${r.value} ${meter?.unit || ""}`;
+                return `<li>${meter?.name || r.meter_id}: ${value}</li>`;
+              }).join("")}
+            </ul>
+          `;
+
+          // Send email via SMTP (using Cloudflare's built-in fetch)
+          const smtpResponse = await fetch(`smtp://${smtpSettings.host}:${smtpSettings.port}`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Basic ${btoa(`${smtpSettings.user_email}:${smtpSettings.password}`)}`,
+            },
+            body: JSON.stringify({
+              from: smtpSettings.from_email,
+              to: sub.email,
+              subject: `Daily Report: ${siteName}`,
+              html: htmlContent,
+            }),
+          } as any).catch(e => ({ ok: false, error: e.message }));
+
+          if ((smtpResponse as any).ok || (smtpResponse as any).status === 200) {
+            sent++;
+            await logReport(admin, {
+              site_id: sub.site_id,
+              sent_to: sub.email,
+              status: "success",
+              message: "Report sent successfully",
+            });
+          } else {
+            errors.push(`Failed to send to ${sub.email}: SMTP error`);
+          }
+        } catch (e: any) {
+          errors.push(`Error processing subscription: ${e.message}`);
+        }
+      }
+
+      return json({
+        ok: true,
+        sent,
+        total: subscriptions.length,
+        errors: errors.length > 0 ? errors : undefined,
+      });
+    }
+
     return json({ error: "Endpoint not found" }, 404);
   } catch (err: any) {
     console.error("API Error:", err);

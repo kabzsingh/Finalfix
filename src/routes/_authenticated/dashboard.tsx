@@ -241,44 +241,53 @@ function SiteCard({ s, now }: { s: SiteOverview; now: number }) {
   return (
     <Link to="/sites/$siteId" params={{ siteId: s.id }} className="group">
       <div 
-        className="rounded-xl border border-border bg-card p-5 shadow-card transition-all hover:shadow-glow"
+        className="rounded-xl border border-border bg-card p-5 shadow-card transition-all hover:shadow-glow overflow-hidden"
         style={{
           borderColor: s.primary_color ? `${s.primary_color}40` : undefined,
+          backgroundImage: s.background_url ? `url(${s.background_url})` : undefined,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
         }}
       >
-        {/* Logo if present */}
-        {s.logo_url && (
-          <div className="mb-3 pb-3 border-b border-border/50">
-            <img src={s.logo_url} alt={s.name} className="h-6 object-contain" />
-          </div>
+        {/* Dark overlay for readability if background exists */}
+        {s.background_url && (
+          <div className="absolute inset-0 bg-black/40 rounded-xl" />
         )}
-        
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <div className="font-semibold truncate">{s.name}</div>
-            {s.location && <div className="text-xs text-muted-foreground truncate">{s.location}</div>}
-          </div>
-          <div className={`shrink-0 px-2 py-1 rounded-md text-[11px] font-medium flex items-center gap-1.5 ${
-            online ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"
-          }`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${online ? "bg-success animate-pulse" : "bg-muted-foreground/40"}`} />
-            {online ? "Live" : "Offline"} · {lastSeenLabel}
-          </div>
-        </div>
-        <div className="mt-4 grid grid-cols-3 gap-2">
-          <Mini icon={Gauge} label="Today" value={s.wash_today.toLocaleString()} color={s.primary_color} />
-          <Mini icon={Activity} label="Lifetime" value={s.wash_total.toLocaleString()} color={s.secondary_color} />
-          <Mini icon={Droplets} label="Fresh L" value={s.fresh_today.toFixed(0)} color={s.accent_color} />
-        </div>
-        <div className="mt-3 text-xs flex items-center gap-1.5">
-          <FlaskConical className="h-3.5 w-3.5 text-muted-foreground" />
-          {s.chemicals_total === 0 ? (
-            <span className="text-muted-foreground">No chemical meters</span>
-          ) : s.chemicals_low > 0 ? (
-            <span className="text-destructive font-medium">{s.chemicals_low} of {s.chemicals_total} chemicals low</span>
-          ) : (
-            <span className="text-success">All {s.chemicals_total} chemicals healthy</span>
+        <div className="relative">
+          {/* Logo if present */}
+          {s.logo_url && (
+            <div className="mb-3 pb-3 border-b border-border/50">
+              <img src={s.logo_url} alt={s.name} className="h-6 object-contain" />
+            </div>
           )}
+          
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="font-semibold truncate">{s.name}</div>
+              {s.location && <div className="text-xs text-muted-foreground truncate">{s.location}</div>}
+            </div>
+            <div className={`shrink-0 px-2 py-1 rounded-md text-[11px] font-medium flex items-center gap-1.5 ${
+              online ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"
+            }`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${online ? "bg-success animate-pulse" : "bg-muted-foreground/40"}`} />
+              {online ? "Live" : "Offline"} · {lastSeenLabel}
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            <Mini icon={Gauge} label="Today" value={s.wash_today.toLocaleString()} color={s.primary_color} />
+            <Mini icon={Activity} label="Lifetime" value={s.wash_total.toLocaleString()} color={s.secondary_color} />
+            <Mini icon={Droplets} label="Fresh L" value={s.fresh_today.toFixed(0)} color={s.accent_color} />
+          </div>
+          <div className="mt-3 text-xs flex items-center gap-1.5">
+            <FlaskConical className="h-3.5 w-3.5 text-muted-foreground" />
+            {s.chemicals_total === 0 ? (
+              <span className="text-muted-foreground">No chemical meters</span>
+            ) : s.chemicals_low > 0 ? (
+              <span className="text-destructive font-medium">{s.chemicals_low} of {s.chemicals_total} chemicals low</span>
+            ) : (
+              <span className="text-success">All {s.chemicals_total} chemicals healthy</span>
+            )}
+          </div>
         </div>
       </div>
     </Link>
