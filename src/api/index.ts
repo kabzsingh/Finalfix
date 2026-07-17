@@ -204,14 +204,14 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
 
     // ── Email Reports (called by cron hourly) ──────────────
     if (path === "/api/public/hooks/send-reports" && method === "POST") {
-      const admin = getSupabaseAdmin(env);
-      const smtpSettings = await getSmtpSettings(admin);
+      const resendApiKey = (env as any).RESEND_API_KEY;
       
-      if (!smtpSettings || !smtpSettings.host) {
-        return json({ error: "SMTP not configured" }, 400);
+      if (!resendApiKey) {
+        return json({ error: "RESEND_API_KEY not configured" }, 400);
       }
 
       // Get all sites with email subscriptions
+      const admin = getSupabaseAdmin(env);
       const { data: subscriptions, error: subError } = await admin
         .from("email_subscriptions")
         .select("*");
@@ -230,17 +230,12 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
       for (const sub of subscriptions) {
         try {
           // Get latest readings for this site
-          const { data: readings, error: readError } = await admin
+          const { data: readings } = await admin
             .from("readings")
             .select("meter_id, value, recorded_at")
             .eq("site_id", sub.site_id)
             .order("recorded_at", { ascending: false })
             .limit(50);
-
-          if (readError) {
-            errors.push(`Site ${sub.site_id}: ${readError.message}`);
-            continue;
-          }
 
           // Get site details
           const { data: site } = await admin
@@ -256,54 +251,90 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
             .eq("site_id", sub.site_id);
 
           const meterMap = new Map(meters?.map((m: any) => [m.id, m]) || []);
-
-          // Build email content
-          const siteName = site?.name || sub.site_id;
           const summaryReadings = readings?.slice(0, 10) || [];
           
+          const siteName = site?.name || sub.site_id;
+          const siteLocation = site?.location || "Unknown location";
+
+          // Build email HTML
+          const readingsHtml = summaryReadings.map((r: any) => {
+            const meter = meterMap.get(r.meter_id);
+            const meterName = meter?.name || "Unknown meter";
+            const meterType = meter?.meter_type || "unknown";
+            
+            let displayValue = String(r.value);
+            if (meterType === "chemical") {
+              displayValue = Number(r.value) >= 1 ? "🔴 LOW" : "🟢 OK";
+            } else if (meterType === "wash") {
+              displayValue = `${Math.round(Number(r.value))} washes`;
+            } else if (meterType === "fresh_water") {
+              displayValue = `${Number(r.value).toFixed(1)}L`;
+            }
+
+            return `
+              <tr style="border-bottom: 1px solid #eee; padding: 10px 0;">
+                <td style="padding: 8px; font-weight: 500;">${meterName}</td>
+                <td style="padding: 8px; text-align: right;">${displayValue}</td>
+              </tr>
+            `;
+          }).join("");
+
           const htmlContent = `
-            <h2>${siteName} Report</h2>
-            <p>Location: ${site?.location || "Unknown"}</p>
-            <h3>Recent Readings</h3>
-            <ul>
-              ${summaryReadings.map((r: any) => {
-                const meter = meterMap.get(r.meter_id);
-                const value = meter?.meter_type === "chemical" 
-                  ? (r.value >= 1 ? "LOW" : "OK")
-                  : `${r.value} ${meter?.unit || ""}`;
-                return `<li>${meter?.name || r.meter_id}: ${value}</li>`;
-              }).join("")}
-            </ul>
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 8px 8px 0 0; text-align: center;">
+                <h1 style="margin: 0; font-size: 28px;">📊 Daily Report</h1>
+                <p style="margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">${siteName}</p>
+              </div>
+              
+              <div style="background: #f9f9f9; padding: 20px; border-radius: 0 0 8px 8px; border: 1px solid #eee; border-top: none;">
+                <p style="margin: 0 0 15px 0; color: #666;">
+                  <strong>Location:</strong> ${siteLocation}<br>
+                  <strong>Generated:</strong> ${new Date().toLocaleString()}
+                </p>
+
+                <h2 style="margin: 20px 0 10px 0; font-size: 16px; color: #333;">Recent Readings</h2>
+                <table style="width: 100%; border-collapse: collapse;">
+                  ${readingsHtml}
+                </table>
+
+                <p style="margin: 20px 0 0 0; padding-top: 20px; border-top: 1px solid #ddd; color: #999; font-size: 12px;">
+                  This is an automated report from WashGrid. <a href="https://auto.washdashboard.workers.dev/" style="color: #667eea; text-decoration: none;">View dashboard</a>
+                </p>
+              </div>
+            </div>
           `;
 
-          // Send email via SMTP (using Cloudflare's built-in fetch)
-          const smtpResponse = await fetch(`smtp://${smtpSettings.host}:${smtpSettings.port}`, {
+          // Send via Resend API
+          const resendResponse = await fetch("https://api.resend.com/emails", {
             method: "POST",
             headers: {
+              "Authorization": `Bearer ${resendApiKey}`,
               "Content-Type": "application/json",
-              Authorization: `Basic ${btoa(`${smtpSettings.user_email}:${smtpSettings.password}`)}`,
             },
             body: JSON.stringify({
-              from: smtpSettings.from_email,
+              from: "WashGrid <onboarding@resend.dev>",
               to: sub.email,
-              subject: `Daily Report: ${siteName}`,
+              subject: `WashGrid Daily Report: ${siteName}`,
               html: htmlContent,
             }),
-          } as any).catch(e => ({ ok: false, error: e.message }));
+          });
 
-          if ((smtpResponse as any).ok || (smtpResponse as any).status === 200) {
+          const resendData = await resendResponse.json() as any;
+
+          if (resendResponse.ok && resendData.id) {
             sent++;
             await logReport(admin, {
               site_id: sub.site_id,
               sent_to: sub.email,
               status: "success",
-              message: "Report sent successfully",
+              message: `Email sent via Resend: ${resendData.id}`,
             });
           } else {
-            errors.push(`Failed to send to ${sub.email}: SMTP error`);
+            const errorMsg = resendData.message || "Unknown error";
+            errors.push(`Failed to send to ${sub.email}: ${errorMsg}`);
           }
         } catch (e: any) {
-          errors.push(`Error processing subscription: ${e.message}`);
+          errors.push(`Error processing ${sub.site_id}: ${e.message}`);
         }
       }
 
