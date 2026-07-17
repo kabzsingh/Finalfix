@@ -48,22 +48,80 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
-/* Dark, industrial dashboard look. Single theme. */
+/* Light theme (default), professional dashboard look */
 :root {
   --radius: 0.75rem;
 
-  --background: oklch(0.18 0.025 220);
-  --foreground: oklch(0.96 0.01 220);
+  /* Light theme - professional look */
+  --background: oklch(1 0 0);                    /* white */
+  --foreground: oklch(0.18 0.025 220);           /* dark slate */
 
-  --card: oklch(0.22 0.028 222);
+  --card: oklch(1 0 0);                          /* white cards */
+  --card-foreground: oklch(0.18 0.025 220);      /* dark text */
+
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.025 220);
+
+  --primary: oklch(0.52 0.12 200);               /* professional blue */
+  --primary-foreground: oklch(1 0 0);
+  --primary-glow: oklch(0.65 0.15 200);
+
+  --secondary: oklch(0.94 0.01 220);             /* light gray */
+  --secondary-foreground: oklch(0.18 0.025 220);
+
+  --muted: oklch(0.94 0.01 220);                 /* light gray backgrounds */
+  --muted-foreground: oklch(0.5 0.02 220);       /* medium gray text */
+
+  --accent: oklch(0.52 0.12 200);                /* blue accent */
+  --accent-foreground: oklch(1 0 0);
+
+  --destructive: oklch(0.65 0.22 22);            /* red */
+  --destructive-foreground: oklch(1 0 0);
+
+  --warning: oklch(0.78 0.16 70);                /* yellow/amber */
+  --warning-foreground: oklch(0.18 0.025 220);
+
+  --success: oklch(0.74 0.16 155);               /* green */
+  --success-foreground: oklch(0.18 0.025 220);
+
+  --border: oklch(0.91 0.01 220);                /* light gray borders */
+  --input: oklch(1 0 0);                         /* white inputs */
+  --ring: oklch(0.52 0.12 200);                  /* blue ring */
+
+  --chart-1: oklch(0.52 0.12 200);               /* blue */
+  --chart-2: oklch(0.74 0.16 155);               /* green */
+  --chart-3: oklch(0.78 0.16 70);                /* yellow */
+  --chart-4: oklch(0.7 0.18 300);                /* purple */
+  --chart-5: oklch(0.65 0.22 22);                /* red */
+
+  --gradient-primary: linear-gradient(135deg, var(--primary), var(--primary-glow));
+  --gradient-surface: linear-gradient(180deg, oklch(0.98 0.005 220), oklch(0.94 0.01 220));
+  --shadow-glow: 0 10px 40px -12px color-mix(in oklab, var(--primary) 20%, transparent);
+  --shadow-card: 0 2px 8px -2px oklch(0.1 0 0 / 0.1);
+
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.18 0.025 220);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: oklch(0.94 0.01 220);
+  --sidebar-accent-foreground: oklch(0.18 0.025 220);
+  --sidebar-border: oklch(0.91 0.01 220);
+  --sidebar-ring: var(--primary);
+}
+
+/* Dark theme - override when .dark class is applied */
+.dark {
+  --background: oklch(0.18 0.025 220);           /* dark slate */
+  --foreground: oklch(0.96 0.01 220);            /* light text */
+
+  --card: oklch(0.22 0.028 222);                 /* darker cards */
   --card-foreground: oklch(0.96 0.01 220);
 
   --popover: oklch(0.22 0.028 222);
   --popover-foreground: oklch(0.96 0.01 220);
 
-  --primary: oklch(0.78 0.16 200);          /* cyan/teal */
+  --primary: oklch(0.78 0.16 200);               /* cyan/teal */
   --primary-foreground: oklch(0.18 0.025 220);
-  --primary-glow: oklch(0.86 0.18 195);
 
   --secondary: oklch(0.28 0.03 222);
   --secondary-foreground: oklch(0.96 0.01 220);
@@ -106,28 +164,6 @@
   --sidebar-accent-foreground: oklch(0.96 0.01 220);
   --sidebar-border: oklch(0.3 0.02 222);
   --sidebar-ring: var(--primary);
-}
-
-.dark {
-  --background: oklch(0.18 0.025 220);
-  --foreground: oklch(0.96 0.01 220);
-  --card: oklch(0.22 0.028 222);
-  --card-foreground: oklch(0.96 0.01 220);
-  --popover: oklch(0.22 0.028 222);
-  --popover-foreground: oklch(0.96 0.01 220);
-  --primary: oklch(0.78 0.16 200);
-  --primary-foreground: oklch(0.18 0.025 220);
-  --secondary: oklch(0.28 0.03 222);
-  --secondary-foreground: oklch(0.96 0.01 220);
-  --muted: oklch(0.26 0.025 222);
-  --muted-foreground: oklch(0.7 0.02 220);
-  --accent: oklch(0.32 0.06 200);
-  --accent-foreground: oklch(0.96 0.01 220);
-  --destructive: oklch(0.65 0.22 22);
-  --destructive-foreground: oklch(0.98 0.01 220);
-  --border: oklch(0.3 0.02 222);
-  --input: oklch(0.3 0.02 222);
-  --ring: oklch(0.78 0.16 200);
 }
 
 @layer base {

@@ -174,6 +174,14 @@ export const seedDemoData = createServerFn({ method: "POST" })
     for (const s of sitesToCreate) {
       const site = await createSite(context.supabase, s);
 
+      // Grant current user access to this site
+      if (site) {
+        await context.supabase.from("user_access").insert({
+          user_id: context.userId,
+          site_id: site.id,
+        });
+      }
+
       const meters = [
         {
           meter_type: "wash" as const,
