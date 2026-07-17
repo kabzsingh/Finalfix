@@ -1537,7 +1537,7 @@ function EmailSubscriptionsPanel({ sites }: { sites: Site[] }) {
     setLoading(true);
     try {
       const { error } = await supabase.from("email_subscriptions").insert([
-        { email: newEmail, site_id: selectedSiteId },
+        { email: newEmail, site_id: selectedSiteId, period: "hourly" },
       ]);
 
       if (error) throw error;
