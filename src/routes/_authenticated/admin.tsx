@@ -301,6 +301,8 @@ scripts/setup-admin.sql`}
 
       <SmtpSettingsPanel />
 
+      <EmailSubscriptionsPanel sites={sites} />
+
       <section className="space-y-4">
         <h2 className="text-xl font-semibold flex items-center gap-2">
           <div className="h-2 w-2 rounded-full bg-primary" />
@@ -1621,3 +1623,144 @@ function SiteAccessDialog({
 }
 
 
+
+function EmailSubscriptionsPanel({ sites }: { sites: Site[] }) {
+  const [subscriptions, setSubscriptions] = useState<Array<{ id: string; email: string; site_id: string; site_name?: string }>>([]);
+  const [newEmail, setNewEmail] = useState("");
+  const [selectedSiteId, setSelectedSiteId] = useState<string>(sites[0]?.id || "");
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    loadSubscriptions();
+  }, []);
+
+  const loadSubscriptions = async () => {
+    try {
+      const { data } = await supabase.from("email_subscriptions").select("*");
+      const subs = (data || []).map((s: any) => ({
+        ...s,
+        site_name: sites.find((site) => site.id === s.site_id)?.name,
+      }));
+      setSubscriptions(subs);
+    } catch (e) {
+      console.error("Failed to load subscriptions:", e);
+    }
+  };
+
+  const addSubscription = async () => {
+    if (!newEmail || !selectedSiteId) {
+      toast.error("Please select a site and enter an email");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.from("email_subscriptions").insert([
+        { email: newEmail, site_id: selectedSiteId },
+      ]);
+
+      if (error) throw error;
+      toast.success(`Email subscription added for ${newEmail}`);
+      setNewEmail("");
+      loadSubscriptions();
+    } catch (e: any) {
+      toast.error(e.message || "Failed to add subscription");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const removeSubscription = async (id: string) => {
+    try {
+      const { error } = await supabase.from("email_subscriptions").delete().eq("id", id);
+      if (error) throw error;
+      toast.success("Subscription removed");
+      loadSubscriptions();
+    } catch (e: any) {
+      toast.error(e.message || "Failed to remove subscription");
+    }
+  };
+
+  return (
+    <section className="space-y-4">
+      <h2 className="text-xl font-semibold flex items-center gap-2">
+        <Mail className="h-5 w-5 text-primary" />
+        Email Report Subscriptions
+      </h2>
+
+      <div className="rounded-xl border border-border bg-card p-6 shadow-sm space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Add email addresses to receive automated daily reports for each site. Reports are sent every hour with recent meter readings.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="sub-site">Site</Label>
+            <Select value={selectedSiteId} onValueChange={setSelectedSiteId}>
+              <SelectTrigger id="sub-site">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {sites.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="sm:col-span-2 space-y-2">
+            <Label htmlFor="sub-email">Email Address</Label>
+            <Input
+              id="sub-email"
+              type="email"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+              placeholder="team@example.com"
+            />
+          </div>
+
+          <div className="flex items-end">
+            <Button onClick={addSubscription} disabled={loading} className="w-full gap-2">
+              <Plus className="h-4 w-4" /> Add
+            </Button>
+          </div>
+        </div>
+
+        {subscriptions.length > 0 && (
+          <div className="mt-6 space-y-2">
+            <h3 className="text-sm font-medium">Active Subscriptions</h3>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {subscriptions.map((sub) => (
+                <div
+                  key={sub.id}
+                  className="flex items-center justify-between px-3 py-2 rounded-lg bg-muted/50 border border-border/50"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium truncate">{sub.email}</div>
+                    <div className="text-xs text-muted-foreground">{sub.site_name}</div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => removeSubscription(sub.id)}
+                    className="ml-2 h-8 w-8 p-0 text-destructive hover:bg-destructive/10"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {subscriptions.length === 0 && (
+          <div className="py-6 text-center rounded-lg bg-muted/30 border border-dashed border-border">
+            <p className="text-sm text-muted-foreground">No email subscriptions yet. Add one above to start receiving reports.</p>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
