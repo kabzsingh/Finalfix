@@ -299,8 +299,6 @@ scripts/setup-admin.sql`}
 
       <UsersPanel currentUserId={user?.id ?? ""} />
 
-      <SmtpSettingsPanel />
-
       <EmailSubscriptionsPanel sites={sites} />
 
       <section className="space-y-4">
