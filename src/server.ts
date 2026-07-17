@@ -99,7 +99,7 @@ export default {
     // Cloudflare → Workers → Settings → Variables & Secrets.
     const runtime = env as Env;
     const baseUrl =
-      runtime?.WORKER_BASE_URL || runtime?.WORKER_URL || "https://finalfix.kabirsingh-cd1.workers.dev";
+      runtime?.WORKER_BASE_URL || runtime?.WORKER_URL || "https://auto.washdashboard.workers.dev";
 
     try {
       const res = await fetch(`${baseUrl}/api/public/hooks/send-reports`, {
