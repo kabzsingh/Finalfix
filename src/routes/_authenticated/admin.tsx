@@ -1485,9 +1485,24 @@ function EmailSubscriptionsPanel({ sites }: { sites: Site[] }) {
       </h2>
 
       <div className="rounded-xl border border-border bg-card p-6 shadow-sm space-y-4">
-        <p className="text-sm text-muted-foreground">
-          Add email addresses to receive automated reports for each site. Reports are sent hourly with recent meter readings aggregated daily.
-        </p>
+        <div>
+          <p className="text-sm text-muted-foreground mb-3">
+            Add email addresses to receive automated reports for each site.
+          </p>
+          
+          <div className="bg-muted/50 rounded-lg p-4 text-xs space-y-2 mb-4">
+            <div className="font-semibold text-foreground">📧 Email Schedule:</div>
+            <div className="space-y-1">
+              <div>• <strong>Frequency:</strong> Sent every hour (top of each hour)</div>
+              <div>• <strong>Data Period:</strong> Last 24 hours of readings</div>
+              <div>• <strong>Includes:</strong> Wash counts, water usage, chemical status</div>
+              <div>• <strong>Timezone:</strong> UTC (Coordinated Universal Time)</div>
+            </div>
+            <div className="mt-3 pt-3 border-t border-border text-foreground">
+              <strong>Example:</strong> Email sent at 14:00 UTC contains data from 00:00-14:00 UTC
+            </div>
+          </div>
+        </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           <div className="space-y-2">
