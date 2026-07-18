@@ -78,12 +78,26 @@ function DashboardPage() {
       }
 
       const metricsPromises = sitesData.map(async (site) => {
+        const todayMidnight = new Date();
+        todayMidnight.setHours(0, 0, 0, 0);
+        const midnightISO = todayMidnight.toISOString();
+
+        // Get latest readings
         const { data: latest } = await supabase
           .from("readings")
           .select("meter_id, value, recorded_at")
           .eq("site_id", site.id)
           .order("recorded_at", { ascending: false })
           .limit(50);
+
+        // Get readings at midnight (to calculate daily delta)
+        const { data: midnightReadings } = await supabase
+          .from("readings")
+          .select("meter_id, value, recorded_at")
+          .eq("site_id", site.id)
+          .lte("recorded_at", midnightISO)
+          .order("recorded_at", { ascending: false })
+          .limit(100);
 
         const { data: meters } = await supabase
           .from("site_meters")
@@ -95,7 +109,9 @@ function DashboardPage() {
 
         const meterMap = new Map(meters?.map((m: any) => [m.id, m]) || []);
         const latestByMeter = new Map<string, any>();
+        const midnightByMeter = new Map<string, any>();
 
+        // Get latest reading per meter
         (latest || []).forEach((r: any) => {
           if (!latestByMeter.has(r.meter_id)) {
             latestByMeter.set(r.meter_id, r);
@@ -103,18 +119,29 @@ function DashboardPage() {
           if (!lastSeen || r.recorded_at > lastSeen) lastSeen = r.recorded_at;
         });
 
-        latestByMeter.forEach((r, meterId) => {
+        // Get midnight reading per meter (most recent before midnight)
+        (midnightReadings || []).forEach((r: any) => {
+          if (!midnightByMeter.has(r.meter_id)) {
+            midnightByMeter.set(r.meter_id, r);
+          }
+        });
+
+        // Calculate metrics
+        latestByMeter.forEach((latestReading, meterId) => {
           const meter = meterMap.get(meterId);
           if (!meter) return;
 
+          const latestValue = Number(latestReading.value);
+          const midnightValue = midnightByMeter.has(meterId) ? Number(midnightByMeter.get(meterId).value) : 0;
+
           if (meter.meter_type === "wash") {
-            washToday = Number(r.value);
-            washTotal = Math.max(washTotal, Number(r.value));
+            washTotal = latestValue;
+            washToday = Math.max(0, latestValue - midnightValue);
           } else if (meter.meter_type === "fresh_water") {
-            freshToday = Number(r.value);
+            freshToday = latestValue;
           } else if (meter.meter_type === "chemical") {
             chemTotal++;
-            if (Number(r.value) >= 1) chemLow++;
+            if (latestValue >= 1) chemLow++;
           }
         });
 
