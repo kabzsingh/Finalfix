@@ -86,7 +86,7 @@ function DashboardPage() {
           .limit(50);
 
         const { data: meters } = await supabase
-          .from("meters")
+          .from("site_meters")
           .select("id, meter_type")
           .eq("site_id", site.id);
 
