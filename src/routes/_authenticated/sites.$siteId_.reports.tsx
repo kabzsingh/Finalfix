@@ -74,10 +74,10 @@ function SiteReportsPage() {
 
       const { data: chemicalEvents } = await supabase
         .from("chemical_low_events")
-        .select("meter_id, status, detected_at")
+        .select("meter_id, went_low_at, topped_up_at, washes_during_low")
         .eq("site_id", siteId)
-        .gte("detected_at", startDate.toISOString())
-        .lte("detected_at", endDate.toISOString());
+        .gte("went_low_at", startDate.toISOString())
+        .lte("went_low_at", endDate.toISOString());
 
       // Build CSV
       let csv = `Wash Dashboard Report - ${siteName}\n`;
@@ -111,11 +111,13 @@ function SiteReportsPage() {
 
       // Chemical events section
       if (chemicalEvents && chemicalEvents.length > 0) {
-        csv += `\nCHEMICAL EVENTS\n`;
-        csv += `Timestamp,Meter,Status\n`;
+        csv += `\nCHEMICAL FILL HISTORY\n`;
+        csv += `Meter,Went Low,Topped Up,Washes Used\n`;
         (chemicalEvents || []).forEach((e: any) => {
           const meter = meters?.find((m: any) => m.id === e.meter_id);
-          csv += `"${new Date(e.detected_at).toLocaleString()}","${meter?.name || "Unknown"}","${e.status}"\n`;
+          const toppedUp = e.topped_up_at ? new Date(e.topped_up_at).toLocaleString() : "Still low";
+          const washesUsed = e.washes_during_low !== null ? e.washes_during_low : "—";
+          csv += `"${meter?.name || "Unknown"}","${new Date(e.went_low_at).toLocaleString()}","${toppedUp}","${washesUsed}"\n`;
         });
       }
 

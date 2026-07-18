@@ -64,6 +64,7 @@ function SiteDetail() {
   const [washTrendData, setWashTrendData] = useState<{ time: string; washes: number }[]>([]);
   const [waterTrendData, setWaterTrendData] = useState<{ time: string; liters: number }[]>([]);
   const [chemicalTrendData, setChemicalTrendData] = useState<{ time: string; meter: string; status: string }[]>([]);
+  const [chemicalFillHistory, setChemicalFillHistory] = useState<{ meter_id: string; went_low_at: string; topped_up_at: string | null; washes_during_low: number | null }[]>([]);
   const dayBaselineRef = useRef<Record<string, number>>({});
   useEffect(() => { dayBaselineRef.current = dayBaseline; }, [dayBaseline]);
 
@@ -281,6 +282,17 @@ function SiteDetail() {
         });
       }
       setChemicalTrendData(chemTrend);
+    }
+
+    // Fetch persisted chemical fill history (recorded server-side by handle_chemical_state_change)
+    if (chemMetersForTrend.length > 0) {
+      const { data: fillHistory } = await supabase
+        .from("chemical_low_events")
+        .select("meter_id, went_low_at, topped_up_at, washes_during_low")
+        .eq("site_id", siteId)
+        .order("went_low_at", { ascending: false })
+        .limit(20);
+      setChemicalFillHistory((fillHistory as any) ?? []);
     }
   };
 
@@ -669,12 +681,16 @@ function SiteDetail() {
                 isLow = !!lowEvent;
 
                 if (isLow && lowEvent) {
-                  washesSinceLow = readings
-                    .filter((r) => {
-                      const wm = meterById.get(r.meter_id);
-                      return wm?.meter_type === "wash" && r.recorded_at >= lowEvent.low_since;
-                    })
-                    .reduce((s, r) => s + Number(r.value), 0);
+                  const washMeterForSite = meters.find((mm) => mm.meter_type === "wash");
+                  const washAtLowValue = washMeterForSite ? washAtLow[lvl.id] : undefined;
+                  const currentWashTotal = washMeterForSite
+                    ? stats.latestByMeter.get(washMeterForSite.id)?.value
+                    : undefined;
+
+                  washesSinceLow =
+                    washAtLowValue !== undefined && currentWashTotal !== undefined
+                      ? Number(currentWashTotal) - Number(washAtLowValue)
+                      : null;
 
                   const lowDelta = Math.floor((now - new Date(lowEvent.low_since).getTime()) / 1000);
                   lowSinceLabel = lowDelta < 60 ? "just now"
@@ -750,6 +766,47 @@ function SiteDetail() {
           </div>
         )}
       </div>
+
+      {/* Chemical fill history: washes consumed between each low event and its top-up */}
+      {chemicalFillHistory.length > 0 && (
+        <div className="rounded-xl border border-border bg-card shadow-card overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+            <h2 className="font-semibold text-sm">Chemical Fill History</h2>
+            <span className="text-[11px] text-muted-foreground">washes used per fill · last 20</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-muted-foreground border-b border-border">
+                  <th className="px-4 py-2 font-medium">Chemical</th>
+                  <th className="px-4 py-2 font-medium">Went low</th>
+                  <th className="px-4 py-2 font-medium">Topped up</th>
+                  <th className="px-4 py-2 font-medium text-right">Washes used</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {chemicalFillHistory.map((evt, idx) => {
+                  const meter = meterById.get(evt.meter_id);
+                  return (
+                    <tr key={idx}>
+                      <td className="px-4 py-2">{meter?.name ?? "Unknown"}</td>
+                      <td className="px-4 py-2 tabular-nums">{new Date(evt.went_low_at).toLocaleString()}</td>
+                      <td className="px-4 py-2 tabular-nums">
+                        {evt.topped_up_at ? new Date(evt.topped_up_at).toLocaleString() : (
+                          <span className="text-destructive">still low</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 text-right font-semibold tabular-nums">
+                        {evt.washes_during_low !== null ? evt.washes_during_low.toLocaleString() : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Live reading history */}
       <div className="rounded-xl border border-border bg-card shadow-card overflow-hidden">
