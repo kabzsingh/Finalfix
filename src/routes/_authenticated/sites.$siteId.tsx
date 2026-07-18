@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, Activity, Download, Droplets, FlaskConical, Gauge, Pencil, Radio, TrendingUp, FileText } from "lucide-react";
+import { ArrowLeft, Activity, Droplets, FlaskConical, Gauge, Pencil, Radio, TrendingUp, FileText } from "lucide-react";
 import { MeterCard } from "@/components/app/MeterCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,59 +45,6 @@ interface ChemLowEvent {
 }
 
 // CSV Export utility
-const exportToCSV = (siteName: string, data: { meters: Array<{name: string; type: string; lastValue: number; unit: string}>; washToday: number; washLifetime: number; freshToday: number; freshLifetime: number; chemicals: Array<{name: string; status: string}>; readings: any[] }) => {
-  const timestamp = new Date().toISOString().split('T')[0];
-  const filename = `${siteName.replace(/\s+/g, '_')}_Report_${timestamp}.csv`;
-  
-  const rows: string[] = [];
-  
-  // Header
-  rows.push("WashGrid Site Report");
-  rows.push(`Site: ${siteName}`);
-  rows.push(`Generated: ${new Date().toLocaleString()}`);
-  rows.push("");
-  
-  // Summary metrics
-  rows.push("SUMMARY METRICS");
-  rows.push("Metric,Value,Unit");
-  rows.push(`Washes Today,${data.washToday},count`);
-  rows.push(`Washes Lifetime,${data.washLifetime},count`);
-  rows.push(`Fresh Water Today,${data.freshToday.toFixed(2)},liters`);
-  rows.push(`Fresh Water Lifetime,${data.freshLifetime.toFixed(2)},liters`);
-  rows.push("");
-  
-  // Meters
-  rows.push("METERS");
-  rows.push("Meter Name,Type,Last Value,Unit");
-  data.meters.forEach((m: any) => {
-    rows.push(`"${m.name}",${m.type},${m.lastValue},${m.unit}`);
-  });
-  rows.push("");
-  
-  // Chemical status
-  rows.push("CHEMICALS");
-  rows.push("Chemical Name,Status");
-  data.chemicals.forEach((c: any) => {
-    rows.push(`"${c.name}",${c.status}`);
-  });
-  rows.push("");
-  
-  // Recent readings
-  rows.push("RECENT READINGS (Last 50)");
-  rows.push("Timestamp,Meter,Value");
-  data.readings.slice(0, 50).forEach((r: any) => {
-    rows.push(`${r.recorded_at},"${r.meter_name}",${r.value}`);
-  });
-  
-  const csvContent = rows.join("\n");
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = filename;
-  link.click();
-  toast.success("Report downloaded");
-};
-
 function SiteDetail() {
   const { siteId } = Route.useParams();
   const navigate = useNavigate();
@@ -483,53 +430,6 @@ function SiteDetail() {
           >
             <FileText className="h-4 w-4" />
             Reports
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              const meterData = meters.map((m) => {
-                const latest = readings.filter((r) => r.meter_id === m.id).sort((a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime())[0];
-                return {
-                  name: m.name,
-                  type: m.meter_type,
-                  lastValue: latest ? latest.value : 0,
-                  unit: m.unit,
-                };
-              });
-
-              const chemData = meters
-                .filter((m) => m.meter_type === "chemical")
-                .map((m) => {
-                  const latest = readings.filter((r) => r.meter_id === m.id).sort((a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime())[0];
-                  const val = latest ? Number(latest.value) : 0;
-                  return {
-                    name: m.name,
-                    status: val >= 1 ? "LOW" : "OK",
-                  };
-                });
-
-              const recentReadings = readings
-                .map((r) => ({
-                  ...r,
-                  meter_name: meters.find((m) => m.id === r.meter_id)?.name || r.meter_id,
-                }))
-                .sort((a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime());
-
-              exportToCSV(site.name || "Report", {
-                meters: meterData,
-                washToday: stats.washToday,
-                washLifetime: stats.washLifetime,
-                freshToday: stats.freshToday,
-                freshLifetime: stats.freshLifetime,
-                chemicals: chemData,
-                readings: recentReadings,
-              });
-            }}
-            className="gap-2"
-          >
-            <Download className="h-4 w-4" />
-            Download Report
           </Button>
           <div className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 flex-shrink-0 ${
             isOnline ? "bg-emerald-50 text-emerald-700 border border-emerald-100" : "bg-slate-50 text-slate-600 border border-slate-200"
