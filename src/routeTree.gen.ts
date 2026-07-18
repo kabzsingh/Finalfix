@@ -13,9 +13,7 @@ import { Route as SignupRouteImport } from './routes/signup'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
-import { Route as AuthenticatedChemicalReportRouteImport } from './routes/_authenticated/chemical-report'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as ApiPublicIngestRouteImport } from './routes/api/public/ingest'
 import { Route as AuthenticatedSitesSiteIdRouteImport } from './routes/_authenticated/sites.$siteId'
@@ -40,22 +38,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedReportsRoute = AuthenticatedReportsRouteImport.update({
-  id: '/reports',
-  path: '/reports',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedChemicalReportRoute =
-  AuthenticatedChemicalReportRouteImport.update({
-    id: '/chemical-report',
-    path: '/chemical-report',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
 const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -84,9 +71,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
   '/admin': typeof AuthenticatedAdminRoute
-  '/chemical-report': typeof AuthenticatedChemicalReportRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/reports': typeof AuthenticatedReportsRoute
   '/sites/$siteId': typeof AuthenticatedSitesSiteIdRoute
   '/api/public/ingest': typeof ApiPublicIngestRoute
   '/api/public/hooks/send-reports': typeof ApiPublicHooksSendReportsRoute
@@ -96,9 +81,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
   '/admin': typeof AuthenticatedAdminRoute
-  '/chemical-report': typeof AuthenticatedChemicalReportRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/reports': typeof AuthenticatedReportsRoute
   '/sites/$siteId': typeof AuthenticatedSitesSiteIdRoute
   '/api/public/ingest': typeof ApiPublicIngestRoute
   '/api/public/hooks/send-reports': typeof ApiPublicHooksSendReportsRoute
@@ -110,9 +93,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
-  '/_authenticated/chemical-report': typeof AuthenticatedChemicalReportRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
-  '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/sites/$siteId': typeof AuthenticatedSitesSiteIdRoute
   '/api/public/ingest': typeof ApiPublicIngestRoute
   '/api/public/hooks/send-reports': typeof ApiPublicHooksSendReportsRoute
@@ -124,9 +105,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/signup'
     | '/admin'
-    | '/chemical-report'
     | '/dashboard'
-    | '/reports'
     | '/sites/$siteId'
     | '/api/public/ingest'
     | '/api/public/hooks/send-reports'
@@ -136,9 +115,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/signup'
     | '/admin'
-    | '/chemical-report'
     | '/dashboard'
-    | '/reports'
     | '/sites/$siteId'
     | '/api/public/ingest'
     | '/api/public/hooks/send-reports'
@@ -149,9 +126,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/signup'
     | '/_authenticated/admin'
-    | '/_authenticated/chemical-report'
     | '/_authenticated/dashboard'
-    | '/_authenticated/reports'
     | '/_authenticated/sites/$siteId'
     | '/api/public/ingest'
     | '/api/public/hooks/send-reports'
@@ -196,25 +171,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/reports': {
-      id: '/_authenticated/reports'
-      path: '/reports'
-      fullPath: '/reports'
-      preLoaderRoute: typeof AuthenticatedReportsRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
     '/_authenticated/dashboard': {
       id: '/_authenticated/dashboard'
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/chemical-report': {
-      id: '/_authenticated/chemical-report'
-      path: '/chemical-report'
-      fullPath: '/chemical-report'
-      preLoaderRoute: typeof AuthenticatedChemicalReportRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin': {
@@ -250,17 +211,13 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
-  AuthenticatedChemicalReportRoute: typeof AuthenticatedChemicalReportRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
-  AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedSitesSiteIdRoute: typeof AuthenticatedSitesSiteIdRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
-  AuthenticatedChemicalReportRoute: AuthenticatedChemicalReportRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
-  AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedSitesSiteIdRoute: AuthenticatedSitesSiteIdRoute,
 }
 

@@ -76,11 +76,6 @@ function AuthLayout() {
                 <LayoutDashboard className="h-4 w-4" /> <span className="hidden sm:inline ml-1">Sites</span>
               </Button>
             </Link>
-            <Link to="/reports">
-              <Button variant={path.startsWith("/reports") ? "secondary" : "ghost"} size="sm">
-                <FileDown className="h-4 w-4" /> <span className="hidden sm:inline ml-1">Reports</span>
-              </Button>
-            </Link>
             <Link to="/admin">
               <Button variant={path.startsWith("/admin") ? "secondary" : "ghost"} size="sm">
                 <Settings className="h-4 w-4" /> <span className="hidden sm:inline ml-1">Admin</span>
