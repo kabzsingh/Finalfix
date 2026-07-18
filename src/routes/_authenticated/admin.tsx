@@ -1486,7 +1486,7 @@ function EmailSubscriptionsPanel({ sites }: { sites: Site[] }) {
 
       <div className="rounded-xl border border-border bg-card p-6 shadow-sm space-y-4">
         <p className="text-sm text-muted-foreground">
-          Add email addresses to receive automated daily reports for each site. Reports are sent every hour with recent meter readings.
+          Add email addresses to receive automated reports for each site. Reports are sent hourly with recent meter readings aggregated daily.
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
