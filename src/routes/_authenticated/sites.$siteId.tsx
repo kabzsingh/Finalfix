@@ -276,7 +276,7 @@ function SiteDetail() {
 
     // Fetch wash trend data (last 7 days for chart)
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60_000).toISOString();
-    const washMeterForTrend = meters.find((m) => m.meter_type === "wash");
+    const washMeterForTrend = (m as any)?.find((x: Meter) => x.meter_type === "wash");
     if (washMeterForTrend) {
       const { data: washReadings } = await supabase
         .from("readings")
