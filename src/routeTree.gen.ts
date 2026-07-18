@@ -18,6 +18,7 @@ import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/
 import { Route as ApiPublicIngestRouteImport } from './routes/api/public/ingest'
 import { Route as AuthenticatedSitesSiteIdRouteImport } from './routes/_authenticated/sites.$siteId'
 import { Route as ApiPublicHooksSendReportsRouteImport } from './routes/api/public/hooks/send-reports'
+import { Route as AuthenticatedSitesSiteIdReportsRouteImport } from './routes/_authenticated/sites.$siteId.reports'
 
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
@@ -65,6 +66,12 @@ const ApiPublicHooksSendReportsRoute =
     path: '/api/public/hooks/send-reports',
     getParentRoute: () => rootRouteImport,
   } as any)
+const AuthenticatedSitesSiteIdReportsRoute =
+  AuthenticatedSitesSiteIdReportsRouteImport.update({
+    id: '/reports',
+    path: '/reports',
+    getParentRoute: () => AuthenticatedSitesSiteIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -72,8 +79,9 @@ export interface FileRoutesByFullPath {
   '/signup': typeof SignupRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/sites/$siteId': typeof AuthenticatedSitesSiteIdRoute
+  '/sites/$siteId': typeof AuthenticatedSitesSiteIdRouteWithChildren
   '/api/public/ingest': typeof ApiPublicIngestRoute
+  '/sites/$siteId/reports': typeof AuthenticatedSitesSiteIdReportsRoute
   '/api/public/hooks/send-reports': typeof ApiPublicHooksSendReportsRoute
 }
 export interface FileRoutesByTo {
@@ -82,8 +90,9 @@ export interface FileRoutesByTo {
   '/signup': typeof SignupRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/sites/$siteId': typeof AuthenticatedSitesSiteIdRoute
+  '/sites/$siteId': typeof AuthenticatedSitesSiteIdRouteWithChildren
   '/api/public/ingest': typeof ApiPublicIngestRoute
+  '/sites/$siteId/reports': typeof AuthenticatedSitesSiteIdReportsRoute
   '/api/public/hooks/send-reports': typeof ApiPublicHooksSendReportsRoute
 }
 export interface FileRoutesById {
@@ -94,8 +103,9 @@ export interface FileRoutesById {
   '/signup': typeof SignupRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
-  '/_authenticated/sites/$siteId': typeof AuthenticatedSitesSiteIdRoute
+  '/_authenticated/sites/$siteId': typeof AuthenticatedSitesSiteIdRouteWithChildren
   '/api/public/ingest': typeof ApiPublicIngestRoute
+  '/_authenticated/sites/$siteId/reports': typeof AuthenticatedSitesSiteIdReportsRoute
   '/api/public/hooks/send-reports': typeof ApiPublicHooksSendReportsRoute
 }
 export interface FileRouteTypes {
@@ -108,6 +118,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/sites/$siteId'
     | '/api/public/ingest'
+    | '/sites/$siteId/reports'
     | '/api/public/hooks/send-reports'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -118,6 +129,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/sites/$siteId'
     | '/api/public/ingest'
+    | '/sites/$siteId/reports'
     | '/api/public/hooks/send-reports'
   id:
     | '__root__'
@@ -129,6 +141,7 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard'
     | '/_authenticated/sites/$siteId'
     | '/api/public/ingest'
+    | '/_authenticated/sites/$siteId/reports'
     | '/api/public/hooks/send-reports'
   fileRoutesById: FileRoutesById
 }
@@ -206,19 +219,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksSendReportsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/sites/$siteId/reports': {
+      id: '/_authenticated/sites/$siteId/reports'
+      path: '/reports'
+      fullPath: '/sites/$siteId/reports'
+      preLoaderRoute: typeof AuthenticatedSitesSiteIdReportsRouteImport
+      parentRoute: typeof AuthenticatedSitesSiteIdRoute
+    }
   }
 }
+
+interface AuthenticatedSitesSiteIdRouteChildren {
+  AuthenticatedSitesSiteIdReportsRoute: typeof AuthenticatedSitesSiteIdReportsRoute
+}
+
+const AuthenticatedSitesSiteIdRouteChildren: AuthenticatedSitesSiteIdRouteChildren =
+  {
+    AuthenticatedSitesSiteIdReportsRoute: AuthenticatedSitesSiteIdReportsRoute,
+  }
+
+const AuthenticatedSitesSiteIdRouteWithChildren =
+  AuthenticatedSitesSiteIdRoute._addFileChildren(
+    AuthenticatedSitesSiteIdRouteChildren,
+  )
 
 interface AuthenticatedRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
-  AuthenticatedSitesSiteIdRoute: typeof AuthenticatedSitesSiteIdRoute
+  AuthenticatedSitesSiteIdRoute: typeof AuthenticatedSitesSiteIdRouteWithChildren
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
-  AuthenticatedSitesSiteIdRoute: AuthenticatedSitesSiteIdRoute,
+  AuthenticatedSitesSiteIdRoute: AuthenticatedSitesSiteIdRouteWithChildren,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
