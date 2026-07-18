@@ -338,6 +338,20 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
         return json({ error: "RESEND_API_KEY not configured" }, 400);
       }
 
+      // Timezone offset map (hours from UTC)
+      const TIMEZONE_OFFSETS: { [key: string]: number } = {
+        "UTC": 0,
+        "America/New_York": -5,
+        "America/Chicago": -6,
+        "America/Denver": -7,
+        "America/Los_Angeles": -8,
+        "Europe/London": 0,
+        "Europe/Paris": 1,
+        "Asia/Dubai": 4,
+        "Asia/Tokyo": 9,
+        "Australia/Sydney": 10,
+      };
+
       // Get all sites with email subscriptions
       const admin = getSupabaseAdmin(env);
       const { data: subscriptions, error: subError } = await admin
@@ -367,9 +381,9 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
           // Skip if not time to send
           const subHour = sub.scheduled_hour || 7;
           
-          // Check if current hour matches schedule (with timezone offset)
-          const timeZoneOffset = parseInt(sub.timezone?.split(":")[0] || "0");
-          const adjustedHour = (currentHour + timeZoneOffset) % 24;
+          // Get timezone offset (default to UTC if not found)
+          const tzOffset = TIMEZONE_OFFSETS[sub.timezone || "UTC"] || 0;
+          const adjustedHour = (currentHour + tzOffset + 24) % 24;
           
           const isDailyTime = sub.send_daily && adjustedHour === subHour;
           const isMonthlyTime = sub.send_monthly && currentDay === 1 && adjustedHour === subHour;
