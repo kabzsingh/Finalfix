@@ -47,7 +47,7 @@ function AuthLayout() {
           </div>
           <h2 className="text-2xl font-bold tracking-tight">Awaiting Admin Approval</h2>
           <p className="text-sm text-muted-foreground leading-relaxed">
-            Your account <strong>{user?.email}</strong> has been created but needs to be approved by an administrator before you can access Wash Dashboard.
+            Your account <strong>{user?.email}</strong> has been created but needs to be approved by an administrator before you can access WashGrid.
           </p>
           <p className="text-xs text-muted-foreground/70">
             Please contact your administrator. You'll get access as soon as they approve your account.
@@ -68,7 +68,7 @@ function AuthLayout() {
             <div className="h-8 w-8 rounded-lg bg-gradient-primary shadow-glow grid place-items-center">
               <Activity className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="font-semibold tracking-tight hidden sm:inline">Wash Dashboard</span>
+            <span className="font-semibold tracking-tight hidden sm:inline">WashGrid</span>
           </Link>
           <nav className="flex items-center gap-1">
             <Link to="/dashboard">

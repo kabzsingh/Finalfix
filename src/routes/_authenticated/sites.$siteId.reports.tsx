@@ -85,7 +85,7 @@ function SiteReportsPage() {
         .lte("detected_at", endDate.toISOString());
 
       // Build CSV
-      let csv = `Wash Dashboard Report - ${siteName}\n`;
+      let csv = `WashGrid Report - ${siteName}\n`;
       csv += `Report Type: ${reportType === "daily" ? "Daily" : "Monthly"}\n`;
       csv += `Period: ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}\n`;
       csv += `Generated: ${new Date().toLocaleString()}\n\n`;
