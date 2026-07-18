@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { createSiteApiKey, grantAdminBootstrap, seedDemoData, getSmtpSettings, updateSmtpSettings, listAllUsers, setUserRole, deleteUser } from "@/lib/admin.functions";
-import { Copy, Plus, Trash2, KeyRound, Sparkles, Cpu, Mail, Send, Server, ShieldCheck, Loader2, AlertTriangle, Users, UserCheck, UserX, Building2 } from "lucide-react";
+import { Copy, Plus, Trash2, KeyRound, Sparkles, Cpu, Mail, Send, Server, ShieldCheck, Loader2, AlertTriangle, Users, UserCheck, UserX, Building2, Save } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 
 import { Textarea } from "@/components/ui/textarea";
@@ -1481,94 +1481,113 @@ function EmailSubscriptionsPanel({ sites }: { sites: Site[] }) {
     <section className="space-y-4">
       <h2 className="text-xl font-semibold flex items-center gap-2">
         <Mail className="h-5 w-5 text-primary" />
-        Email Report Subscriptions
+        Automated Site Reports
       </h2>
 
-      <div className="rounded-xl border border-border bg-card p-6 shadow-sm space-y-4">
+      <div className="rounded-xl border border-border bg-card p-6 shadow-sm space-y-6">
         <div>
-          <p className="text-sm text-muted-foreground mb-3">
-            Add email addresses to receive automated reports for each site.
+          <p className="text-sm text-muted-foreground mb-4">
+            Scheduled email analytics for site performance.
           </p>
           
-          <div className="bg-muted/50 rounded-lg p-4 text-xs space-y-2 mb-4">
-            <div className="font-semibold text-foreground">📧 Email Schedule:</div>
-            <div className="space-y-1">
-              <div>• <strong>Frequency:</strong> Sent every hour (top of each hour)</div>
-              <div>• <strong>Data Period:</strong> Last 24 hours of readings</div>
-              <div>• <strong>Includes:</strong> Wash counts, water usage, chemical status</div>
-              <div>• <strong>Timezone:</strong> UTC (Coordinated Universal Time)</div>
-            </div>
-            <div className="mt-3 pt-3 border-t border-border text-foreground">
-              <strong>Example:</strong> Email sent at 14:00 UTC contains data from 00:00-14:00 UTC
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+            <Button variant="outline" className="gap-2 h-12">
+              <Send className="h-4 w-4" />
+              Instant Test
+            </Button>
+            <Button className="gap-2 h-12 bg-primary hover:bg-primary/90">
+              <Save className="h-4 w-4" />
+              Save Schedule
+            </Button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+        {/* Schedule Configuration */}
+        <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="sub-site">Site</Label>
-            <Select value={selectedSiteId} onValueChange={setSelectedSiteId}>
-              <SelectTrigger id="sub-site">
+            <Label>Scheduled Send Time</Label>
+            <Select defaultValue="07">
+              <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {sites.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.name}
+                {Array.from({ length: 24 }, (_, i) => (
+                  <SelectItem key={i} value={String(i).padStart(2, '0')}>
+                    {String(i).padStart(2, '0')}:00 (Site Local)
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          <div className="sm:col-span-2 space-y-2">
-            <Label htmlFor="sub-email">Email Address</Label>
+          <div className="space-y-2">
+            <Label>Site Timezone</Label>
             <Input
-              id="sub-email"
-              type="email"
-              value={newEmail}
-              onChange={(e) => setNewEmail(e.target.value)}
-              placeholder="team@example.com"
+              value="UTC"
+              disabled
+              placeholder="UTC"
+              className="bg-muted/50"
             />
           </div>
 
-          <div className="flex items-end">
-            <Button onClick={addSubscription} disabled={loading} className="w-full gap-2">
-              <Plus className="h-4 w-4" /> Add
-            </Button>
+          <div className="space-y-2">
+            <Label>Delivery Recipients</Label>
+            <textarea
+              placeholder="manager@wash.com, ops@wash.com"
+              rows={3}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              defaultValue="manager@wash.com, ops@wash.com"
+            />
+            <p className="text-xs text-muted-foreground">
+              Multiple addresses supported. Separate with commas.
+            </p>
           </div>
         </div>
 
+        {/* Report Type Toggles */}
+        <div className="space-y-3 border-t border-border pt-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium text-sm">Daily Intelligence</p>
+              <p className="text-xs text-muted-foreground">Every morning at 07:00</p>
+            </div>
+            <div className="w-12 h-7 bg-primary rounded-full" />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium text-sm">Monthly CSV Analytics</p>
+              <p className="text-xs text-muted-foreground">First day of month</p>
+            </div>
+            <div className="w-12 h-7 bg-primary rounded-full" />
+          </div>
+        </div>
+
+        {/* Active Schedules */}
         {subscriptions.length > 0 && (
-          <div className="mt-6 space-y-2">
-            <h3 className="text-sm font-medium">Active Subscriptions</h3>
+          <div className="border-t border-border pt-6 space-y-3">
+            <h3 className="text-sm font-medium">Active Schedules</h3>
             <div className="space-y-2 max-h-64 overflow-y-auto">
               {subscriptions.map((sub) => (
                 <div
                   key={sub.id}
                   className="flex items-center justify-between px-3 py-2 rounded-lg bg-muted/50 border border-border/50"
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium truncate">{sub.email}</div>
-                    <div className="text-xs text-muted-foreground">{sub.site_name}</div>
+                  <div>
+                    <p className="text-sm font-medium">{sub.email}</p>
+                    <p className="text-xs text-muted-foreground">{sub.site_id}</p>
                   </div>
                   <Button
-                    size="sm"
                     variant="ghost"
+                    size="sm"
                     onClick={() => removeSubscription(sub.id)}
-                    className="ml-2 h-8 w-8 p-0 text-destructive hover:bg-destructive/10"
+                    disabled={loading}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
                 </div>
               ))}
             </div>
-          </div>
-        )}
-
-        {subscriptions.length === 0 && (
-          <div className="py-6 text-center rounded-lg bg-muted/30 border border-dashed border-border">
-            <p className="text-sm text-muted-foreground">No email subscriptions yet. Add one above to start receiving reports.</p>
           </div>
         )}
       </div>
