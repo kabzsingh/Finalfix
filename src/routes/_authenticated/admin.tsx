@@ -299,8 +299,6 @@ scripts/setup-admin.sql`}
 
       <UsersPanel currentUserId={user?.id ?? ""} />
 
-      <EmailSubscriptionsPanel sites={sites} />
-
       <section className="space-y-4">
         <h2 className="text-xl font-semibold flex items-center gap-2">
           <div className="h-2 w-2 rounded-full bg-primary" />
