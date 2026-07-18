@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { ArrowLeft, Activity, Download, Droplets, FlaskConical, Gauge, Pencil, Radio, TrendingUp, FileText } from "lucide-react";
@@ -100,6 +100,7 @@ const exportToCSV = (siteName: string, data: { meters: Array<{name: string; type
 
 function SiteDetail() {
   const { siteId } = Route.useParams();
+  const navigate = useNavigate();
   const [site, setSite] = useState<{ name: string; location: string | null } | null>(null);
   const [meters, setMeters] = useState<Meter[]>([]);
   const [readings, setReadings] = useState<Reading[]>([]);
@@ -474,16 +475,15 @@ function SiteDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Link to={`/sites/${site.id}/reports`}>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2"
-            >
-              <FileText className="h-4 w-4" />
-              Reports
-            </Button>
-          </Link>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate({ to: `/sites/${siteId}/reports` })}
+            className="gap-2"
+          >
+            <FileText className="h-4 w-4" />
+            Reports
+          </Button>
           <Button
             variant="outline"
             size="sm"
