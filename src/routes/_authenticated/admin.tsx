@@ -1419,59 +1419,134 @@ function SiteAccessDialog({
 
 
 function EmailSubscriptionsPanel({ sites }: { sites: Site[] }) {
-  const [subscriptions, setSubscriptions] = useState<Array<{ id: string; email: string; site_id: string; site_name?: string }>>([]);
-  const [newEmail, setNewEmail] = useState("");
-  const [selectedSiteId, setSelectedSiteId] = useState<string>(sites[0]?.id || "");
+  const [configs, setConfigs] = useState<Map<string, any>>(new Map());
   const [loading, setLoading] = useState(false);
+  const [testSending, setTestSending] = useState<string | null>(null);
 
   useEffect(() => {
-    loadSubscriptions();
-  }, []);
+    loadAllConfigs();
+  }, [sites]);
 
-  const loadSubscriptions = async () => {
+  const loadAllConfigs = async () => {
     try {
-      const { data } = await supabase.from("email_subscriptions").select("*");
-      const subs = (data || []).map((s: any) => ({
-        ...s,
-        site_name: sites.find((site) => site.id === s.site_id)?.name,
-      }));
-      setSubscriptions(subs);
+      const { data: subscriptions } = await supabase
+        .from("email_subscriptions")
+        .select("*");
+      
+      const configMap = new Map();
+      sites.forEach((site) => {
+        const subs = subscriptions?.filter((s: any) => s.site_id === site.id) || [];
+        configMap.set(site.id, {
+          scheduled_hour: subs[0]?.scheduled_hour || 7,
+          timezone: subs[0]?.timezone || "UTC",
+          recipients: subs[0]?.recipients?.join(", ") || "",
+          send_daily: subs[0]?.send_daily ?? true,
+          send_monthly: subs[0]?.send_monthly ?? false,
+          is_active: subs[0]?.is_active ?? true,
+          subscription_id: subs[0]?.id,
+        });
+      });
+      setConfigs(configMap);
     } catch (e) {
-      console.error("Failed to load subscriptions:", e);
+      console.error("Failed to load configs:", e);
     }
   };
 
-  const addSubscription = async () => {
-    if (!newEmail || !selectedSiteId) {
-      toast.error("Please select a site and enter an email");
-      return;
-    }
+  const updateConfig = async (siteId: string, field: string, value: any) => {
+    const config = configs.get(siteId);
+    const updated = { ...config, [field]: value };
+    setConfigs(new Map(configs).set(siteId, updated));
+  };
 
+  const saveConfig = async (siteId: string) => {
     setLoading(true);
     try {
-      const { error } = await supabase.from("email_subscriptions").insert([
-        { email: newEmail, site_id: selectedSiteId, period: "daily" },
-      ]);
+      const config = configs.get(siteId);
+      const site = sites.find((s) => s.id === siteId);
+      const recipients = config.recipients
+        .split(",")
+        .map((e: string) => e.trim())
+        .filter((e: string) => e);
 
-      if (error) throw error;
-      toast.success(`Email subscription added for ${newEmail}`);
-      setNewEmail("");
-      loadSubscriptions();
+      if (recipients.length === 0) {
+        toast.error("Please add at least one recipient email");
+        setLoading(false);
+        return;
+      }
+
+      if (config.subscription_id) {
+        // Update existing
+        const { error } = await supabase
+          .from("email_subscriptions")
+          .update({
+            scheduled_hour: parseInt(config.scheduled_hour),
+            timezone: config.timezone,
+            recipients,
+            send_daily: config.send_daily,
+            send_monthly: config.send_monthly,
+            is_active: config.is_active,
+          })
+          .eq("id", config.subscription_id);
+        if (error) throw error;
+      } else {
+        // Create new
+        const { error } = await supabase
+          .from("email_subscriptions")
+          .insert({
+            site_id: siteId,
+            email: recipients[0],
+            recipients,
+            scheduled_hour: parseInt(config.scheduled_hour),
+            timezone: config.timezone,
+            send_daily: config.send_daily,
+            send_monthly: config.send_monthly,
+            is_active: config.is_active,
+            period: "daily",
+          });
+        if (error) throw error;
+      }
+
+      toast.success(`Email schedule saved for ${site?.name}`);
+      await loadAllConfigs();
     } catch (e: any) {
-      toast.error(e.message || "Failed to add subscription");
+      toast.error(e.message || "Failed to save configuration");
     } finally {
       setLoading(false);
     }
   };
 
-  const removeSubscription = async (id: string) => {
+  const sendTestEmail = async (siteId: string) => {
+    setTestSending(siteId);
     try {
-      const { error } = await supabase.from("email_subscriptions").delete().eq("id", id);
-      if (error) throw error;
-      toast.success("Subscription removed");
-      loadSubscriptions();
+      const config = configs.get(siteId);
+      const recipients = config.recipients
+        .split(",")
+        .map((e: string) => e.trim())
+        .filter((e: string) => e);
+
+      if (recipients.length === 0) {
+        toast.error("Please add at least one recipient email");
+        setTestSending(null);
+        return;
+      }
+
+      const response = await fetch("/api/public/hooks/send-test-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          site_id: siteId,
+          recipients,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Failed to send test email");
+      
+      toast.success("✅ Test email sent! Check your inbox.");
     } catch (e: any) {
-      toast.error(e.message || "Failed to remove subscription");
+      toast.error(e.message || "Failed to send test email");
+    } finally {
+      setTestSending(null);
     }
   };
 
@@ -1479,115 +1554,161 @@ function EmailSubscriptionsPanel({ sites }: { sites: Site[] }) {
     <section className="space-y-4">
       <h2 className="text-xl font-semibold flex items-center gap-2">
         <Mail className="h-5 w-5 text-primary" />
-        Automated Site Reports
+        Email Report Schedules
       </h2>
 
-      <div className="rounded-xl border border-border bg-card p-6 shadow-sm space-y-6">
-        <div>
-          <p className="text-sm text-muted-foreground mb-4">
-            Scheduled email analytics for site performance.
-          </p>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
-            <Button variant="outline" className="gap-2 h-12">
-              <Send className="h-4 w-4" />
-              Instant Test
-            </Button>
-            <Button className="gap-2 h-12 bg-primary hover:bg-primary/90">
-              <Save className="h-4 w-4" />
-              Save Schedule
-            </Button>
-          </div>
-        </div>
+      <div className="space-y-4">
+        {sites.map((site) => {
+          const config = configs.get(site.id) || {
+            scheduled_hour: 7,
+            timezone: "UTC",
+            recipients: "",
+            send_daily: true,
+            send_monthly: false,
+            is_active: true,
+          };
 
-        {/* Schedule Configuration */}
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label>Scheduled Send Time</Label>
-            <Select defaultValue="07">
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Array.from({ length: 24 }, (_, i) => (
-                  <SelectItem key={i} value={String(i).padStart(2, '0')}>
-                    {String(i).padStart(2, '0')}:00 (Site Local)
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Site Timezone</Label>
-            <Input
-              value="UTC"
-              disabled
-              placeholder="UTC"
-              className="bg-muted/50"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label>Delivery Recipients</Label>
-            <textarea
-              placeholder="manager@wash.com, ops@wash.com"
-              rows={3}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-              defaultValue="manager@wash.com, ops@wash.com"
-            />
-            <p className="text-xs text-muted-foreground">
-              Multiple addresses supported. Separate with commas.
-            </p>
-          </div>
-        </div>
-
-        {/* Report Type Toggles */}
-        <div className="space-y-3 border-t border-border pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-medium text-sm">Daily Intelligence</p>
-              <p className="text-xs text-muted-foreground">Every morning at 07:00</p>
-            </div>
-            <div className="w-12 h-7 bg-primary rounded-full" />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-medium text-sm">Monthly CSV Analytics</p>
-              <p className="text-xs text-muted-foreground">First day of month</p>
-            </div>
-            <div className="w-12 h-7 bg-primary rounded-full" />
-          </div>
-        </div>
-
-        {/* Active Schedules */}
-        {subscriptions.length > 0 && (
-          <div className="border-t border-border pt-6 space-y-3">
-            <h3 className="text-sm font-medium">Active Schedules</h3>
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {subscriptions.map((sub) => (
-                <div
-                  key={sub.id}
-                  className="flex items-center justify-between px-3 py-2 rounded-lg bg-muted/50 border border-border/50"
-                >
-                  <div>
-                    <p className="text-sm font-medium">{sub.email}</p>
-                    <p className="text-xs text-muted-foreground">{sub.site_id}</p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removeSubscription(sub.id)}
-                    disabled={loading}
-                  >
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
+          return (
+            <div key={site.id} className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4">
+              {/* Site Header */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-base">{site.name}</h3>
+                  {site.location && <p className="text-xs text-muted-foreground">{site.location}</p>}
                 </div>
-              ))}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {config.is_active ? "🟢 Active" : "⚫ Disabled"}
+                  </span>
+                  <Switch
+                    checked={config.is_active}
+                    onCheckedChange={(checked) =>
+                      updateConfig(site.id, "is_active", checked)
+                    }
+                  />
+                </div>
+              </div>
+
+              {/* Configuration Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Send Time */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Send Time (24h)</Label>
+                  <Select
+                    value={String(config.scheduled_hour).padStart(2, "0")}
+                    onValueChange={(val) =>
+                      updateConfig(site.id, "scheduled_hour", parseInt(val))
+                    }
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 24 }, (_, i) => (
+                        <SelectItem key={i} value={String(i).padStart(2, "0")}>
+                          {String(i).padStart(2, "0")}:00
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Timezone */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Timezone</Label>
+                  <Select value={config.timezone} onValueChange={(val) => updateConfig(site.id, "timezone", val)}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="UTC">UTC</SelectItem>
+                      <SelectItem value="America/New_York">EST/EDT</SelectItem>
+                      <SelectItem value="America/Chicago">CST/CDT</SelectItem>
+                      <SelectItem value="America/Denver">MST/MDT</SelectItem>
+                      <SelectItem value="America/Los_Angeles">PST/PDT</SelectItem>
+                      <SelectItem value="Europe/London">GMT/BST</SelectItem>
+                      <SelectItem value="Europe/Paris">CET/CEST</SelectItem>
+                      <SelectItem value="Asia/Dubai">GST</SelectItem>
+                      <SelectItem value="Asia/Tokyo">JST</SelectItem>
+                      <SelectItem value="Australia/Sydney">AEDT</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Recipients */}
+              <div className="space-y-2">
+                <Label className="text-xs font-medium">Recipients (comma-separated emails)</Label>
+                <Textarea
+                  value={config.recipients}
+                  onChange={(e) => updateConfig(site.id, "recipients", e.target.value)}
+                  placeholder="manager@company.com, ops@company.com"
+                  rows={2}
+                  className="text-sm resize-none"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  💡 Multiple addresses supported. One per line or comma-separated.
+                </p>
+              </div>
+
+              {/* Report Type Toggles */}
+              <div className="grid grid-cols-2 gap-3 border-t border-border pt-4">
+                <div className="flex items-center justify-between rounded-lg border border-border/50 p-3">
+                  <label className="text-xs font-medium cursor-pointer flex-1">
+                    Daily Reports
+                  </label>
+                  <Switch
+                    checked={config.send_daily}
+                    onCheckedChange={(checked) =>
+                      updateConfig(site.id, "send_daily", checked)
+                    }
+                  />
+                </div>
+                <div className="flex items-center justify-between rounded-lg border border-border/50 p-3">
+                  <label className="text-xs font-medium cursor-pointer flex-1">
+                    Monthly Reports
+                  </label>
+                  <Switch
+                    checked={config.send_monthly}
+                    onCheckedChange={(checked) =>
+                      updateConfig(site.id, "send_monthly", checked)
+                    }
+                  />
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 border-t border-border pt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => sendTestEmail(site.id)}
+                  disabled={testSending === site.id || !config.recipients.trim()}
+                  className="flex-1 gap-2 text-xs h-9"
+                >
+                  {testSending === site.id ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Send className="h-3 w-3" />
+                  )}
+                  Test Email
+                </Button>
+                <Button
+                  onClick={() => saveConfig(site.id)}
+                  disabled={loading || !config.recipients.trim()}
+                  className="flex-1 gap-2 text-xs h-9"
+                >
+                  {loading ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Save className="h-3 w-3" />
+                  )}
+                  Save Schedule
+                </Button>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })}
       </div>
     </section>
   );

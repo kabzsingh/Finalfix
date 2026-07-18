@@ -203,6 +203,134 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     }
 
     // ── Email Reports (called by cron hourly) ──────────────
+    if (path === "/api/public/hooks/send-test-report" && method === "POST") {
+      const resendApiKey = (env as any).RESEND_API_KEY;
+      
+      if (!resendApiKey) {
+        return json({ error: "RESEND_API_KEY not configured" }, 400);
+      }
+
+      const body = await request.json() as any;
+      const { site_id, recipients } = body;
+
+      if (!site_id || !recipients || recipients.length === 0) {
+        return json({ error: "Missing site_id or recipients" }, 400);
+      }
+
+      try {
+        const admin = getSupabaseAdmin(env);
+
+        // Get site and latest readings
+        const { data: site } = await admin
+          .from("sites")
+          .select("name, location")
+          .eq("id", site_id)
+          .single();
+
+        const { data: readings } = await admin
+          .from("readings")
+          .select("meter_id, value, recorded_at")
+          .eq("site_id", site_id)
+          .order("recorded_at", { ascending: false })
+          .limit(50);
+
+        const { data: meters } = await admin
+          .from("site_meters")
+          .select("id, name, meter_type, unit")
+          .eq("site_id", site_id);
+
+        const meterMap = new Map(meters?.map((m: any) => [m.id, m]) || []);
+        const summaryReadings = readings?.slice(0, 10) || [];
+        
+        const siteName = site?.name || site_id;
+        const siteLocation = site?.location || "Unknown location";
+
+        // Build email HTML
+        const readingsHtml = summaryReadings.map((r: any) => {
+          const meter = meterMap.get(r.meter_id);
+          const meterName = meter?.name || "Unknown meter";
+          const meterType = meter?.meter_type || "unknown";
+          
+          let displayValue = String(r.value);
+          if (meterType === "chemical") {
+            displayValue = Number(r.value) >= 1 ? "🔴 LOW" : "🟢 OK";
+          } else if (meterType === "wash") {
+            displayValue = `${Math.round(Number(r.value))} washes`;
+          } else if (meterType === "fresh_water") {
+            displayValue = `${Number(r.value).toFixed(1)}L`;
+          }
+
+          return `
+            <tr style="border-bottom: 1px solid #eee; padding: 10px 0;">
+              <td style="padding: 8px; font-weight: 500;">${meterName}</td>
+              <td style="padding: 8px; text-align: right;">${displayValue}</td>
+            </tr>
+          `;
+        }).join("");
+
+        const htmlContent = `
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 8px 8px 0 0; text-align: center;">
+              <h1 style="margin: 0; font-size: 28px;">📊 Test Report</h1>
+              <p style="margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">${siteName}</p>
+              <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.7;">✅ Test Email - Not scheduled</p>
+            </div>
+            
+            <div style="background: #f9f9f9; padding: 20px; border-radius: 0 0 8px 8px; border: 1px solid #eee; border-top: none;">
+              <p style="margin: 0 0 15px 0; color: #666;">
+                <strong>Location:</strong> ${siteLocation}<br>
+                <strong>Generated:</strong> ${new Date().toLocaleString()}
+              </p>
+
+              <h2 style="margin: 20px 0 10px 0; font-size: 16px; color: #333;">Latest Readings</h2>
+              <table style="width: 100%; border-collapse: collapse;">
+                ${readingsHtml || '<tr><td style="padding: 8px; color: #999;">No readings available</td></tr>'}
+              </table>
+
+              <p style="margin: 20px 0 0 0; padding-top: 20px; border-top: 1px solid #ddd; color: #999; font-size: 12px;">
+                This is a test email from WashGrid. <a href="https://auto.washdashboard.workers.dev/" style="color: #667eea; text-decoration: none;">View dashboard</a>
+              </p>
+            </div>
+          </div>
+        `;
+
+        // Send to all recipients
+        const results = await Promise.all(
+          recipients.map((email: string) =>
+            fetch("https://api.resend.com/emails", {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${resendApiKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                from: "WashGrid <onboarding@resend.dev>",
+                to: email,
+                subject: `[TEST] WashGrid Report: ${siteName}`,
+                html: htmlContent,
+              }),
+            })
+              .then((r) => r.json())
+              .then((data) => ({ email, success: data.id ? true : false, id: data.id }))
+              .catch((e) => ({ email, success: false, error: e.message }))
+          )
+        );
+
+        const sent = results.filter((r: any) => r.success).length;
+        const failed = results.filter((r: any) => !r.success);
+
+        return json({
+          ok: true,
+          sent,
+          total: recipients.length,
+          details: results,
+          failed: failed.length > 0 ? failed : undefined,
+        });
+      } catch (e: any) {
+        return json({ error: e.message || "Failed to send test email" }, 500);
+      }
+    }
+
     if (path === "/api/public/hooks/send-reports" && method === "POST") {
       const resendApiKey = (env as any).RESEND_API_KEY;
       
@@ -214,21 +342,64 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
       const admin = getSupabaseAdmin(env);
       const { data: subscriptions, error: subError } = await admin
         .from("email_subscriptions")
-        .select("*");
+        .select("*")
+        .eq("is_active", true);
       
       if (subError) {
         return json({ error: subError.message }, 500);
       }
 
       if (!subscriptions || subscriptions.length === 0) {
-        return json({ ok: true, sent: 0, message: "No subscriptions" });
+        return json({ ok: true, sent: 0, message: "No active subscriptions" });
       }
+
+      const now = new Date();
+      const currentHour = now.getUTCHours();
+      const currentDay = now.getUTCDate();
+      const currentMonth = now.getUTCMonth();
 
       let sent = 0;
       const errors = [];
+      const skipped = [];
 
       for (const sub of subscriptions) {
         try {
+          // Skip if not time to send
+          const subHour = sub.scheduled_hour || 7;
+          
+          // Check if current hour matches schedule (with timezone offset)
+          const timeZoneOffset = parseInt(sub.timezone?.split(":")[0] || "0");
+          const adjustedHour = (currentHour + timeZoneOffset) % 24;
+          
+          const isDailyTime = sub.send_daily && adjustedHour === subHour;
+          const isMonthlyTime = sub.send_monthly && currentDay === 1 && adjustedHour === subHour;
+
+          if (!isDailyTime && !isMonthlyTime) {
+            skipped.push({
+              site_id: sub.site_id,
+              reason: `Not scheduled time (current: ${adjustedHour}:00, scheduled: ${subHour}:00, daily: ${sub.send_daily}, monthly: ${sub.send_monthly})`,
+            });
+            continue;
+          }
+
+          // Check if already sent today/month
+          if (sub.next_send_at && new Date(sub.next_send_at) > now) {
+            skipped.push({
+              site_id: sub.site_id,
+              reason: `Already sent today. Next send: ${sub.next_send_at}`,
+            });
+            continue;
+          }
+
+          const recipients = sub.recipients || [sub.email];
+          if (!recipients || recipients.length === 0) {
+            skipped.push({
+              site_id: sub.site_id,
+              reason: "No recipients configured",
+            });
+            continue;
+          }
+
           // Get latest readings for this site
           const { data: readings } = await admin
             .from("readings")
@@ -246,7 +417,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
 
           // Get meters
           const { data: meters } = await admin
-            .from("meters")
+            .from("site_meters")
             .select("id, name, meter_type, unit")
             .eq("site_id", sub.site_id);
 
@@ -255,6 +426,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
           
           const siteName = site?.name || sub.site_id;
           const siteLocation = site?.location || "Unknown location";
+          const reportType = isDailyTime ? "Daily" : "Monthly";
 
           // Build email HTML
           const readingsHtml = summaryReadings.map((r: any) => {
@@ -282,7 +454,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
           const htmlContent = `
             <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
               <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 8px 8px 0 0; text-align: center;">
-                <h1 style="margin: 0; font-size: 28px;">📊 Daily Report</h1>
+                <h1 style="margin: 0; font-size: 28px;">📊 ${reportType} Report</h1>
                 <p style="margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">${siteName}</p>
               </div>
               
@@ -294,44 +466,61 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
 
                 <h2 style="margin: 20px 0 10px 0; font-size: 16px; color: #333;">Recent Readings</h2>
                 <table style="width: 100%; border-collapse: collapse;">
-                  ${readingsHtml}
+                  ${readingsHtml || '<tr><td style="padding: 8px; color: #999;">No readings available</td></tr>'}
                 </table>
 
                 <p style="margin: 20px 0 0 0; padding-top: 20px; border-top: 1px solid #ddd; color: #999; font-size: 12px;">
-                  This is an automated report from WashGrid. <a href="https://auto.washdashboard.workers.dev/" style="color: #667eea; text-decoration: none;">View dashboard</a>
+                  This is an automated ${reportType.toLowerCase()} report from WashGrid. <a href="https://auto.washdashboard.workers.dev/" style="color: #667eea; text-decoration: none;">View dashboard</a>
                 </p>
               </div>
             </div>
           `;
 
-          // Send via Resend API
-          const resendResponse = await fetch("https://api.resend.com/emails", {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${resendApiKey}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              from: "WashGrid <onboarding@resend.dev>",
-              to: sub.email,
-              subject: `WashGrid Daily Report: ${siteName}`,
-              html: htmlContent,
-            }),
-          });
-
-          const resendData = await resendResponse.json() as any;
-
-          if (resendResponse.ok && resendData.id) {
-            sent++;
-            await logReport(admin, {
-              site_id: sub.site_id,
-              sent_to: sub.email,
-              status: "success",
-              message: `Email sent via Resend: ${resendData.id}`,
+          // Send to all recipients
+          let sentToRecipients = 0;
+          for (const email of recipients) {
+            const resendResponse = await fetch("https://api.resend.com/emails", {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${resendApiKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                from: "WashGrid <onboarding@resend.dev>",
+                to: email,
+                subject: `WashGrid ${reportType} Report: ${siteName}`,
+                html: htmlContent,
+              }),
             });
-          } else {
-            const errorMsg = resendData.message || "Unknown error";
-            errors.push(`Failed to send to ${sub.email}: ${errorMsg}`);
+
+            const resendData = await resendResponse.json() as any;
+
+            if (resendResponse.ok && resendData.id) {
+              sentToRecipients++;
+            } else {
+              const errorMsg = resendData.message || "Unknown error";
+              errors.push(`Failed to send to ${email} for ${siteName}: ${errorMsg}`);
+            }
+          }
+
+          if (sentToRecipients > 0) {
+            sent++;
+            
+            // Update next_send_at
+            const nextSend = new Date();
+            if (isDailyTime) {
+              nextSend.setDate(nextSend.getDate() + 1);
+            } else {
+              nextSend.setMonth(nextSend.getMonth() + 1);
+            }
+            
+            await admin
+              .from("email_subscriptions")
+              .update({
+                last_sent_at: now.toISOString(),
+                next_send_at: nextSend.toISOString(),
+              })
+              .eq("id", sub.id);
           }
         } catch (e: any) {
           errors.push(`Error processing ${sub.site_id}: ${e.message}`);
@@ -342,6 +531,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
         ok: true,
         sent,
         total: subscriptions.length,
+        skipped: skipped.length > 0 ? skipped : undefined,
         errors: errors.length > 0 ? errors : undefined,
       });
     }
