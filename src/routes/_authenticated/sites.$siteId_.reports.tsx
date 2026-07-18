@@ -7,7 +7,7 @@ import { Download, Calendar, TrendingUp } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
-export const Route = createFileRoute("/_authenticated/sites/$siteId/reports")({
+export const Route = createFileRoute("/_authenticated/sites/$siteId_/reports")({
   component: SiteReportsPage,
 });
 
