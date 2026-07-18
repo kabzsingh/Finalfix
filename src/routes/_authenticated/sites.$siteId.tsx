@@ -64,7 +64,7 @@ function SiteDetail() {
   const [washTrendData, setWashTrendData] = useState<{ time: string; washes: number }[]>([]);
   const [waterTrendData, setWaterTrendData] = useState<{ time: string; liters: number }[]>([]);
   const [chemicalTrendData, setChemicalTrendData] = useState<{ time: string; meter: string; status: string }[]>([]);
-  const [chemicalFillHistory, setChemicalFillHistory] = useState<{ meter_id: string; went_low_at: string; topped_up_at: string | null; washes_during_low: number | null }[]>([]);
+  const [chemicalFillHistory, setChemicalFillHistory] = useState<{ meter_id: string; went_low_at: string; topped_up_at: string | null; wash_count_at_low: number | null; wash_count_at_topup: number | null; washes_during_low: number | null }[]>([]);
   const dayBaselineRef = useRef<Record<string, number>>({});
   useEffect(() => { dayBaselineRef.current = dayBaseline; }, [dayBaseline]);
 
@@ -288,7 +288,7 @@ function SiteDetail() {
     if (chemMetersForTrend.length > 0) {
       const { data: fillHistory } = await supabase
         .from("chemical_low_events")
-        .select("meter_id, went_low_at, topped_up_at, washes_during_low")
+        .select("meter_id, went_low_at, topped_up_at, wash_count_at_low, wash_count_at_topup, washes_during_low")
         .eq("site_id", siteId)
         .order("went_low_at", { ascending: false })
         .limit(20);
@@ -681,15 +681,23 @@ function SiteDetail() {
                 isLow = !!lowEvent;
 
                 if (isLow && lowEvent) {
+                  // Use the wash count recorded server-side at the exact moment this
+                  // chemical went low (stored by handle_chemical_state_change), not a
+                  // client-side re-estimation — this is the authoritative source.
+                  const activeDbEvent = chemicalFillHistory.find(
+                    (e) => e.meter_id === lvl.id && e.topped_up_at === null,
+                  );
                   const washMeterForSite = meters.find((mm) => mm.meter_type === "wash");
-                  const washAtLowValue = washMeterForSite ? washAtLow[lvl.id] : undefined;
                   const currentWashTotal = washMeterForSite
                     ? stats.latestByMeter.get(washMeterForSite.id)?.value
                     : undefined;
 
+                  const washCountAtLow =
+                    activeDbEvent?.wash_count_at_low ?? washAtLow[lvl.id];
+
                   washesSinceLow =
-                    washAtLowValue !== undefined && currentWashTotal !== undefined
-                      ? Number(currentWashTotal) - Number(washAtLowValue)
+                    washCountAtLow !== undefined && washCountAtLow !== null && currentWashTotal !== undefined
+                      ? Number(currentWashTotal) - Number(washCountAtLow)
                       : null;
 
                   const lowDelta = Math.floor((now - new Date(lowEvent.low_since).getTime()) / 1000);
