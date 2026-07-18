@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { createSiteApiKey, grantAdminBootstrap, seedDemoData, getSmtpSettings, updateSmtpSettings, listAllUsers, setUserRole, deleteUser } from "@/lib/admin.functions";
-import { Copy, Plus, Trash2, KeyRound, Sparkles, Cpu, Mail, Send, Server, ShieldCheck, Loader2, AlertTriangle, Users, UserCheck, UserX, Building2, Save } from "lucide-react";
+import { Copy, Plus, Trash2, KeyRound, Sparkles, Cpu, Mail, Send, Server, ShieldCheck, Loader2, AlertTriangle, Users, UserCheck, UserX, Building2, Save, Pencil } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 
 import { Textarea } from "@/components/ui/textarea";
@@ -236,6 +236,24 @@ scripts/setup-admin.sql`}
     }
   };
 
+  const updateMeter = async (id: string, updates: { capacity: number | null; low_threshold: number | null }): Promise<boolean> => {
+    try {
+      const { error } = await supabase.from("site_meters")
+        .update({ capacity: updates.capacity, low_threshold: updates.low_threshold })
+        .eq("id", id);
+      if (error) {
+        toast.error(error.message);
+        return false;
+      }
+      load();
+      toast.success("Meter settings saved");
+      return true;
+    } catch (e: any) {
+      toast.error(e.message || "Failed to update meter");
+      return false;
+    }
+  };
+
   const removeMeter = async (id: string) => {
     if (!confirm("Remove this meter? This cannot be undone.")) return;
     const { error } = await supabase.from("site_meters").delete().eq("id", id);
@@ -333,6 +351,7 @@ scripts/setup-admin.sql`}
               keys={keys.filter((k) => k.site_id === site.id)}
               onRemoveSite={() => removeSite(site.id)}
               onAddMeter={(m) => addMeter(site.id, m)}
+              onUpdateMeter={updateMeter}
               onRemoveMeter={removeMeter}
               onGenerateKey={() => handleGenKey(site.id)}
               onRevokeKey={revokeKey}
@@ -507,12 +526,108 @@ function SmtpSettingsPanel() {
   );
 }
 
+function MeterRow({
+  meter, onUpdateMeter, onRemoveMeter,
+}: {
+  meter: Meter;
+  onUpdateMeter: (id: string, updates: { capacity: number | null; low_threshold: number | null }) => Promise<boolean>;
+  onRemoveMeter: (id: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [capacity, setCapacity] = useState(meter.capacity != null ? String(meter.capacity) : "");
+  const [lowThreshold, setLowThreshold] = useState(meter.low_threshold != null ? String(meter.low_threshold) : "");
+  const [saving, setSaving] = useState(false);
+  const isChemical = meter.meter_type === "chemical" || meter.meter_type === "chemical_flow";
+
+  const handleSave = async () => {
+    setSaving(true);
+    const ok = await onUpdateMeter(meter.id, {
+      capacity: capacity.trim() ? Number(capacity) : null,
+      low_threshold: lowThreshold.trim() ? Number(lowThreshold) : null,
+    });
+    setSaving(false);
+    if (ok) setEditing(false);
+  };
+
+  return (
+    <div className="rounded-lg border border-border bg-background p-3 transition-colors hover:border-primary/30">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="flex flex-col items-center justify-center px-2 py-1 rounded bg-muted font-mono text-[10px] font-bold text-muted-foreground">
+            ID
+            <span className="text-primary">{meter.device_key}</span>
+          </div>
+          <div>
+            <div className="text-sm font-semibold">{meter.name}</div>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-[10px] uppercase font-bold text-muted-foreground/70">{meter.meter_type.replace("_", " ")}</span>
+              {meter.chemical_group && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-500 font-bold border border-indigo-500/10">
+                  GRP: {meter.chemical_group}
+                </span>
+              )}
+              {!editing && meter.capacity != null && (
+                <span className="text-[10px] text-muted-foreground/60">Drum: {meter.capacity}{meter.unit}</span>
+              )}
+              {!editing && meter.low_threshold != null && (
+                <span className="text-[10px] text-muted-foreground/60">Float trips at: {meter.low_threshold}{meter.unit} used</span>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          {isChemical && (
+            <Button variant="ghost" size="icon" onClick={() => setEditing((v) => !v)} className="h-8 w-8 text-muted-foreground hover:text-primary">
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          <Button variant="ghost" size="icon" onClick={() => onRemoveMeter(meter.id)} className="h-8 w-8 text-muted-foreground hover:text-destructive">
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      {editing && isChemical && (
+        <div className="mt-3 pt-3 border-t border-border/60 grid grid-cols-2 gap-3 items-end">
+          <div className="space-y-1">
+            <Label className="text-[10px]">Total drum capacity ({meter.unit || "L"})</Label>
+            <Input
+              className="h-8 text-xs"
+              type="number"
+              placeholder="e.g. 210"
+              value={capacity}
+              onChange={(e) => setCapacity(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[10px]">Float trips after ({meter.unit || "L"} used from full)</Label>
+            <Input
+              className="h-8 text-xs"
+              type="number"
+              placeholder="e.g. 50"
+              value={lowThreshold}
+              onChange={(e) => setLowThreshold(e.target.value)}
+            />
+          </div>
+          <div className="col-span-2 flex justify-end gap-2">
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setEditing(false)}>Cancel</Button>
+            <Button size="sm" className="h-8 text-xs" onClick={handleSave} disabled={saving}>
+              {saving ? "Saving..." : "Save"}
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SiteAdminCard({
-  site, meters, keys, onRemoveSite, onAddMeter, onRemoveMeter, onGenerateKey, onRevokeKey, onGenerateSketch, onUpdateBranding,
+  site, meters, keys, onRemoveSite, onAddMeter, onUpdateMeter, onRemoveMeter, onGenerateKey, onRevokeKey, onGenerateSketch, onUpdateBranding,
 }: {
   site: Site; meters: Meter[]; keys: ApiKeyRow[];
   onRemoveSite: () => void;
   onAddMeter: (m: Partial<Meter>) => Promise<boolean>;
+  onUpdateMeter: (id: string, updates: { capacity: number | null; low_threshold: number | null }) => Promise<boolean>;
   onRemoveMeter: (id: string) => void;
   onGenerateKey: () => void;
   onRevokeKey: (id: string) => void;
@@ -561,27 +676,7 @@ function SiteAdminCard({
 
           <div className="space-y-2">
             {meters.map((m) => (
-              <div key={m.id} className="group flex items-center justify-between rounded-lg border border-border bg-background p-3 transition-colors hover:border-primary/30">
-                <div className="flex items-center gap-4">
-                  <div className="flex flex-col items-center justify-center px-2 py-1 rounded bg-muted font-mono text-[10px] font-bold text-muted-foreground">
-                    ID
-                    <span className="text-primary">{m.device_key}</span>
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold">{m.name}</div>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[10px] uppercase font-bold text-muted-foreground/70">{m.meter_type.replace("_", " ")}</span>
-                      {m.chemical_group && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-500 font-bold border border-indigo-500/10">
-                          GRP: {m.chemical_group}
-                        </span>
-                      )}
-                      {m.capacity && <span className="text-[10px] text-muted-foreground/60">CAP: {m.capacity}{m.unit}</span>}
-                    </div>
-                  </div>
-                </div>
-                <Button variant="ghost" size="icon" onClick={() => onRemoveMeter(m.id)} className="h-8 w-8 text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
-              </div>
+              <MeterRow key={m.id} meter={m} onUpdateMeter={onUpdateMeter} onRemoveMeter={onRemoveMeter} />
             ))}
 
             {meters.length === 0 && (
