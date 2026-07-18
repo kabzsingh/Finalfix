@@ -675,8 +675,44 @@ function SiteDetail() {
               let isLow = false;
               let washesSinceLow: number | null = null;
               let lowSinceLabel: string | null = null;
+              let litresPerWash: number | null = null;
+              let washesThisDrainCycle: number | null = null;
 
               if (lvl) {
+                // Chemical-per-wash: only meaningful over the DRAIN phase (from a
+                // refill, when the container is full, down to the moment it next
+                // trips the low sensor) — NOT the period the light stays on waiting
+                // to be refilled. low_threshold is the volume consumed to trip the
+                // switch (e.g. float sits 50L down from full), so that IS the
+                // volume used per drain cycle — not capacity minus it.
+                const meterEvents = chemicalFillHistory
+                  .filter((e) => e.meter_id === lvl.id)
+                  .slice()
+                  .sort((a, b) => a.went_low_at.localeCompare(b.went_low_at));
+
+                if (lvl.low_threshold != null && meterEvents.length >= 2) {
+                  const volumePerDrain = lvl.low_threshold;
+                  const perWashSamples: number[] = [];
+                  for (let idx = 1; idx < meterEvents.length; idx++) {
+                    const prev = meterEvents[idx - 1];
+                    const curr = meterEvents[idx];
+                    if (
+                      prev.topped_up_at !== null &&
+                      prev.wash_count_at_topup !== null &&
+                      curr.wash_count_at_low !== null
+                    ) {
+                      const washesInCycle = curr.wash_count_at_low - prev.wash_count_at_topup;
+                      if (washesInCycle > 0) {
+                        perWashSamples.push(volumePerDrain / washesInCycle);
+                        if (idx === meterEvents.length - 1) washesThisDrainCycle = washesInCycle;
+                      }
+                    }
+                  }
+                  if (perWashSamples.length > 0) {
+                    litresPerWash = perWashSamples.reduce((s, v) => s + v, 0) / perWashSamples.length;
+                  }
+                }
+
                 const lowEvent = chemLowEvents.find((e) => e.meter_id === lvl.id);
                 isLow = !!lowEvent;
 
@@ -738,6 +774,22 @@ function SiteDetail() {
                     )
                   ) : (
                     <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">No level sensor</div>
+                  )}
+                  {lvl && litresPerWash !== null && (
+                    <div className="rounded-lg border border-border bg-card/60 p-3">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium">Chemical per wash</span>
+                        <span className="font-semibold tabular-nums">{litresPerWash.toFixed(3)} {lvl.unit || "L"}</span>
+                      </div>
+                      <div className="mt-1 text-[11px] text-muted-foreground">
+                        based on {lvl.low_threshold} {lvl.unit || "L"} used per {washesThisDrainCycle ?? "—"} washes (full → low)
+                      </div>
+                    </div>
+                  )}
+                  {lvl && litresPerWash === null && lvl.low_threshold == null && (
+                    <div className="rounded-lg border border-dashed border-border p-3 text-[11px] text-muted-foreground">
+                      Set the low-mark drop volume (e.g. 50L) in Admin to calculate chemical used per wash.
+                    </div>
                   )}
                   {flw ? (
                     <div className="rounded-lg border border-border bg-card/60 p-3">
