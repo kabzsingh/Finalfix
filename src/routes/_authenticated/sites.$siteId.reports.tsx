@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
 import { Download, Calendar, TrendingUp } from "lucide-react";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/sites/$siteId/reports")({
@@ -19,11 +19,6 @@ function SiteReportsPage() {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
   const [loading, setLoading] = useState(false);
   const [maxDaysBack, setMaxDaysBack] = useState(90);
-
-  const supabase = createClient(
-    import.meta.env.VITE_SUPABASE_URL,
-    import.meta.env.VITE_SUPABASE_KEY
-  );
 
   useEffect(() => {
     loadSiteInfo();
@@ -85,7 +80,7 @@ function SiteReportsPage() {
         .lte("detected_at", endDate.toISOString());
 
       // Build CSV
-      let csv = `WashGrid Report - ${siteName}\n`;
+      let csv = `Wash Dashboard Report - ${siteName}\n`;
       csv += `Report Type: ${reportType === "daily" ? "Daily" : "Monthly"}\n`;
       csv += `Period: ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}\n`;
       csv += `Generated: ${new Date().toLocaleString()}\n\n`;
