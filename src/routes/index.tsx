@@ -21,7 +21,7 @@ function Landing() {
             <div className="h-8 w-8 rounded-lg bg-gradient-primary shadow-glow grid place-items-center">
               <Activity className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="font-semibold tracking-tight">WashGrid</span>
+            <span className="font-semibold tracking-tight">Wash Dashboard</span>
           </div>
           <div className="flex items-center gap-2">
             <Link to="/login"><Button variant="ghost" size="sm">Sign in</Button></Link>
@@ -39,7 +39,7 @@ function Landing() {
             Every wash, every drop, every chemical — <span className="bg-gradient-primary bg-clip-text text-transparent">in real time.</span>
           </h1>
           <p className="mt-5 text-base md:text-lg text-muted-foreground max-w-2xl mx-auto">
-            WashGrid streams wash counts, fresh water, and chemical levels from every site straight to one live dashboard. Built for fleets of 20+ wash sites running ESP32 meters.
+            Wash Dashboard streams wash counts, fresh water, and chemical levels from every site straight to one live dashboard. Built for fleets of 20+ wash sites running ESP32 meters.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
             <Link to="/signup"><Button size="lg" className="shadow-glow">Start free</Button></Link>
@@ -90,7 +90,7 @@ x-site-api-key: ws_live_********
       </main>
 
       <footer className="border-t border-border py-6 text-center text-xs text-muted-foreground">
-        © {new Date().getFullYear()} WashGrid
+        © {new Date().getFullYear()} Wash Dashboard
       </footer>
     </div>
   );

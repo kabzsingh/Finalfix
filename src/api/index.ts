@@ -288,7 +288,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
               </table>
 
               <p style="margin: 20px 0 0 0; padding-top: 20px; border-top: 1px solid #ddd; color: #999; font-size: 12px;">
-                This is a test email from WashGrid. <a href="https://auto.washdashboard.workers.dev/" style="color: #667eea; text-decoration: none;">View dashboard</a>
+                This is a test email from Wash Dashboard. <a href="https://auto.washdashboard.workers.dev/" style="color: #667eea; text-decoration: none;">View dashboard</a>
               </p>
             </div>
           </div>
@@ -304,9 +304,9 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({
-                from: "WashGrid <onboarding@resend.dev>",
+                from: "Wash Dashboard <onboarding@resend.dev>",
                 to: email,
-                subject: `[TEST] WashGrid Report: ${siteName}`,
+                subject: `[TEST] Wash Dashboard Report: ${siteName}`,
                 html: htmlContent,
               }),
             })
@@ -484,7 +484,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
                 </table>
 
                 <p style="margin: 20px 0 0 0; padding-top: 20px; border-top: 1px solid #ddd; color: #999; font-size: 12px;">
-                  This is an automated ${reportType.toLowerCase()} report from WashGrid. <a href="https://auto.washdashboard.workers.dev/" style="color: #667eea; text-decoration: none;">View dashboard</a>
+                  This is an automated ${reportType.toLowerCase()} report from Wash Dashboard. <a href="https://auto.washdashboard.workers.dev/" style="color: #667eea; text-decoration: none;">View dashboard</a>
                 </p>
               </div>
             </div>
@@ -500,9 +500,9 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({
-                from: "WashGrid <onboarding@resend.dev>",
+                from: "Wash Dashboard <onboarding@resend.dev>",
                 to: email,
-                subject: `WashGrid ${reportType} Report: ${siteName}`,
+                subject: `Wash Dashboard ${reportType} Report: ${siteName}`,
                 html: htmlContent,
               }),
             });

@@ -75,7 +75,7 @@ export function AuthShell({ title, subtitle, children }: { title: string; subtit
           <div className="h-8 w-8 rounded-lg bg-gradient-primary shadow-glow grid place-items-center">
             <Activity className="h-4 w-4 text-primary-foreground" />
           </div>
-          <span className="font-semibold">WashGrid</span>
+          <span className="font-semibold">Wash Dashboard</span>
         </Link>
         <div className="rounded-xl border border-border bg-card p-8 shadow-card">
           <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
