@@ -13,8 +13,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { createSiteApiKey, grantAdminBootstrap, seedDemoData, getSmtpSettings, updateSmtpSettings, listAllUsers, setUserRole, deleteUser } from "@/lib/admin.functions";
-import { Copy, Plus, Trash2, KeyRound, Sparkles, Cpu, Mail, Send, Server, ShieldCheck, Loader2, AlertTriangle, Users, UserCheck, UserX, Building2, Save, Pencil } from "lucide-react";
+import { Copy, Plus, Trash2, KeyRound, Sparkles, Cpu, Mail, Send, Server, ShieldCheck, Loader2, AlertTriangle, Users, UserCheck, UserX, Building2, Save, Pencil, Palette } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { applyBrandColorsGlobally } from "@/lib/theme-context";
 
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
@@ -315,6 +316,8 @@ scripts/setup-admin.sql`}
         </Button>
       </div>
 
+      <AppThemePanel />
+
       <UsersPanel currentUserId={user?.id ?? ""} />
 
       <section className="space-y-4">
@@ -406,6 +409,117 @@ scripts/setup-admin.sql`}
         onClose={() => setSketchSite(null)}
       />
     </div>
+  );
+}
+
+function AppThemePanel() {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [mode, setMode] = useState<"light" | "dark">("dark");
+  const [primary, setPrimary] = useState("#5ad1e0");
+  const [accent, setAccent] = useState("#2c8f9e");
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("app_settings")
+        .select("theme_mode, primary_color, accent_color")
+        .eq("id", true)
+        .maybeSingle();
+      if (data) {
+        setMode((data.theme_mode as "light" | "dark") ?? "dark");
+        setPrimary(data.primary_color ?? "#5ad1e0");
+        setAccent(data.accent_color ?? "#2c8f9e");
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  // Live preview as the admin picks colors, before saving
+  useEffect(() => {
+    if (!loading) applyBrandColorsGlobally(primary, accent);
+  }, [primary, accent, loading]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    const { error } = await supabase
+      .from("app_settings")
+      .update({ theme_mode: mode, primary_color: primary, accent_color: accent, updated_at: new Date().toISOString() })
+      .eq("id", true);
+    setSaving(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success("App theme saved — applies for all users");
+  };
+
+  const handleReset = () => {
+    setMode("dark");
+    setPrimary("#5ad1e0");
+    setAccent("#2c8f9e");
+  };
+
+  if (loading) return null;
+
+  return (
+    <section className="space-y-4">
+      <h2 className="text-xl font-semibold flex items-center gap-2">
+        <Palette className="h-5 w-5 text-primary" />
+        App Theme
+      </h2>
+      <div className="rounded-xl border border-border bg-card p-6 shadow-sm space-y-6">
+        <p className="text-sm text-muted-foreground">
+          Set the default look for everyone using the app. Colors apply globally; each person's light/dark mode toggle still overrides just their own view.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          <div className="space-y-2">
+            <Label>Default mode</Label>
+            <Select value={mode} onValueChange={(v) => setMode(v as "light" | "dark")}>
+              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="dark">Dark</SelectItem>
+                <SelectItem value="light">Light</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Primary color</Label>
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={primary}
+                onChange={(e) => setPrimary(e.target.value)}
+                className="h-9 w-9 rounded border border-border cursor-pointer bg-transparent"
+              />
+              <Input value={primary} onChange={(e) => setPrimary(e.target.value)} className="h-9 font-mono text-xs" />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Accent color</Label>
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={accent}
+                onChange={(e) => setAccent(e.target.value)}
+                className="h-9 w-9 rounded border border-border cursor-pointer bg-transparent"
+              />
+              <Input value={accent} onChange={(e) => setAccent(e.target.value)} className="h-9 font-mono text-xs" />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2 border-t border-border/60">
+          <Button variant="outline" size="sm" onClick={handleReset}>Reset to default</Button>
+          <Button size="sm" onClick={handleSave} disabled={saving} className="gap-2">
+            <Save className="h-3.5 w-3.5" /> {saving ? "Saving..." : "Save Theme"}
+          </Button>
+        </div>
+      </div>
+    </section>
   );
 }
 
