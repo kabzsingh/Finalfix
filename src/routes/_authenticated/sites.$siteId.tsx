@@ -63,7 +63,6 @@ function SiteDetail() {
   const [washAtLow, setWashAtLow] = useState<Record<string, number>>({});
   const [washTrendData, setWashTrendData] = useState<{ time: string; washes: number }[]>([]);
   const [waterTrendData, setWaterTrendData] = useState<{ time: string; liters: number }[]>([]);
-  const [chemicalTrendData, setChemicalTrendData] = useState<{ time: string; meter: string; status: string }[]>([]);
   const [chemicalFillHistory, setChemicalFillHistory] = useState<{ meter_id: string; went_low_at: string; topped_up_at: string | null; wash_count_at_low: number | null; wash_count_at_topup: number | null; washes_during_low: number | null }[]>([]);
   const dayBaselineRef = useRef<Record<string, number>>({});
   useEffect(() => { dayBaselineRef.current = dayBaseline; }, [dayBaseline]);
@@ -260,31 +259,8 @@ function SiteDetail() {
       setWaterTrendData(trendData);
     }
 
-    // Fetch chemical trend data (status changes over last 7 days)
-    const chemMetersForTrend = (m as any)?.filter((x: Meter) => x.meter_type === "chemical") ?? [];
-    if (chemMetersForTrend.length > 0) {
-      const chemTrend: any[] = [];
-      for (const chemMeter of chemMetersForTrend) {
-        const { data: chemReadings } = await supabase
-          .from("readings")
-          .select("value,recorded_at")
-          .eq("meter_id", chemMeter.id)
-          .gte("recorded_at", sevenDaysAgo)
-          .order("recorded_at", { ascending: true })
-          .limit(100);
-        
-        (chemReadings ?? []).forEach((r: any) => {
-          chemTrend.push({
-            time: new Date(r.recorded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-            meter: chemMeter.name,
-            status: Number(r.value) >= 1 ? "LOW" : "OK",
-          });
-        });
-      }
-      setChemicalTrendData(chemTrend);
-    }
-
     // Fetch persisted chemical fill history (recorded server-side by handle_chemical_state_change)
+    const chemMetersForTrend = (m as any)?.filter((x: Meter) => x.meter_type === "chemical") ?? [];
     if (chemMetersForTrend.length > 0) {
       const { data: fillHistory } = await supabase
         .from("chemical_low_events")
@@ -579,43 +555,6 @@ function SiteDetail() {
               />
             </LineChart>
           </ResponsiveContainer>
-        </div>
-      )}
-
-      {chemicalTrendData.length > 0 && (
-        <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6">
-          <h2 className="text-xl font-semibold text-slate-900 mb-6 flex items-center gap-2">
-            <Activity className="h-5 w-5 text-amber-600" />
-            Chemical Status History
-          </h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th className="text-left px-4 py-2 text-slate-600 font-semibold">Time</th>
-                  <th className="text-left px-4 py-2 text-slate-600 font-semibold">Meter</th>
-                  <th className="text-left px-4 py-2 text-slate-600 font-semibold">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {chemicalTrendData.slice(0, 50).map((row, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50">
-                    <td className="px-4 py-2 text-slate-700">{row.time}</td>
-                    <td className="px-4 py-2 text-slate-700">{row.meter}</td>
-                    <td className="px-4 py-2">
-                      <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                        row.status === "LOW" 
-                          ? "bg-red-100 text-red-700" 
-                          : "bg-green-100 text-green-700"
-                      }`}>
-                        {row.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
         </div>
       )}
 
