@@ -52,12 +52,18 @@ function DashboardPage() {
           .select("id");
         siteIds = (allSites || []).map((s: any) => s.id);
       } else {
-        // Regular user: get only sites they have access to
-        const { data: userSites } = await supabase
-          .from("user_access")
-          .select("site_id")
-          .eq("user_id", user?.id);
-        siteIds = (userSites || []).map((us: any) => us.site_id);
+        // Regular user: get sites they have access to, either as an
+        // assigned operator (site_operators) or via direct access
+        // grants (user_access) — a user can appear in either table.
+        const [{ data: operatorSites }, { data: userSites }] = await Promise.all([
+          supabase.from("site_operators").select("site_id").eq("user_id", user?.id),
+          supabase.from("user_access").select("site_id").eq("user_id", user?.id),
+        ]);
+        const combined = new Set<string>([
+          ...((operatorSites || []).map((s: any) => s.site_id)),
+          ...((userSites || []).map((s: any) => s.site_id)),
+        ]);
+        siteIds = Array.from(combined);
       }
 
       if (siteIds.length === 0) {
