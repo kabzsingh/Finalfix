@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import { createSiteApiKey, grantAdminBootstrap, seedDemoData, getSmtpSettings, updateSmtpSettings, listAllUsers, setUserRole, deleteUser } from "@/lib/admin.functions";
 import { Copy, Plus, Trash2, KeyRound, Sparkles, Cpu, Mail, Send, Server, ShieldCheck, Loader2, AlertTriangle, Users, UserCheck, UserX, Building2, Save, Pencil, Palette } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
-import { applyBrandColorsGlobally } from "@/lib/theme-context";
+import { previewTheme } from "@/lib/theme-context";
 
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
@@ -437,8 +437,8 @@ function AppThemePanel() {
 
   // Live preview as the admin picks colors, before saving
   useEffect(() => {
-    if (!loading) applyBrandColorsGlobally(primary, accent);
-  }, [primary, accent, loading]);
+    if (!loading) previewTheme(mode, primary, accent);
+  }, [primary, accent, mode, loading]);
 
   const handleSave = async () => {
     setSaving(true);
