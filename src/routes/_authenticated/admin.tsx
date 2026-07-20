@@ -419,7 +419,7 @@ function SmtpSettingsPanel() {
   const [port, setPort] = useState("587");
   const [userEmail, setUserEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [fromName, setFromName] = useState("WashGrid Dashboard");
+  const [fromName, setFromName] = useState("Autowash Dashboard");
   const [fromEmail, setFromEmail] = useState("");
   const [encryption, setEncryption] = useState<"tls" | "ssl" | "none">("tls");
 
@@ -431,7 +431,7 @@ function SmtpSettingsPanel() {
         setPort(String(data.port || "587"));
         setUserEmail(data.user_email || "");
         setPassword(data.password || "");
-        setFromName(data.from_name || "WashGrid Dashboard");
+        setFromName(data.from_name || "Autowash Dashboard");
         setFromEmail(data.from_email || "");
         setEncryption((data.encryption as any) || "tls");
       }
@@ -503,7 +503,7 @@ function SmtpSettingsPanel() {
         </div>
         <div className="space-y-2">
           <Label>Global Sender Name</Label>
-          <Input value={fromName} onChange={(e) => setFromName(e.target.value)} placeholder="WashGrid Automations" />
+          <Input value={fromName} onChange={(e) => setFromName(e.target.value)} placeholder="Autowash Dashboard Automations" />
         </div>
         <div className="sm:col-span-2 space-y-2">
           <Label>Global From Address</Label>

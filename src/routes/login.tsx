@@ -4,9 +4,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Activity } from "lucide-react";
 import { toast } from "sonner";
 import { signIn } from "@/lib/auth";
+import logo from "@/assets/logo.jpg";
 
 export const Route = createFileRoute("/login")({ component: LoginPage });
 
@@ -72,10 +72,8 @@ export function AuthShell({ title, subtitle, children }: { title: string; subtit
     <div className="min-h-screen grid place-items-center px-4">
       <div className="w-full max-w-md">
         <Link to="/" className="flex items-center gap-2 justify-center mb-6">
-          <div className="h-8 w-8 rounded-lg bg-gradient-primary shadow-glow grid place-items-center">
-            <Activity className="h-4 w-4 text-primary-foreground" />
-          </div>
-          <span className="font-semibold">WashGrid</span>
+          <img src={logo} alt="Autowash Dashboard" className="h-8 w-8 rounded-lg object-contain bg-white" />
+          <span className="font-semibold">Autowash Dashboard</span>
         </Link>
         <div className="rounded-xl border border-border bg-card p-8 shadow-card">
           <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>

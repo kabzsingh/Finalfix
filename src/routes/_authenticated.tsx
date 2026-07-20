@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Activity, LayoutDashboard, Settings, LogOut, FileDown } from "lucide-react";
+import logo from "@/assets/logo.jpg";
 import { getSupabaseDashboardTablesUrl, getSupabaseProjectRef } from "@/lib/supabase-project";
 import { signOut as serverSignOut } from "@/lib/auth";
 
@@ -47,7 +48,7 @@ function AuthLayout() {
           </div>
           <h2 className="text-2xl font-bold tracking-tight">Awaiting Admin Approval</h2>
           <p className="text-sm text-muted-foreground leading-relaxed">
-            Your account <strong>{user?.email}</strong> has been created but needs to be approved by an administrator before you can access WashGrid.
+            Your account <strong>{user?.email}</strong> has been created but needs to be approved by an administrator before you can access Autowash Dashboard.
           </p>
           <p className="text-xs text-muted-foreground/70">
             Please contact your administrator. You'll get access as soon as they approve your account.
@@ -65,10 +66,8 @@ function AuthLayout() {
       <header className="border-b border-border bg-card/40 backdrop-blur sticky top-0 z-10">
         <div className="container mx-auto px-4 md:px-6 py-3 flex items-center justify-between gap-3">
           <Link to="/dashboard" className="flex items-center gap-2 shrink-0">
-            <div className="h-8 w-8 rounded-lg bg-gradient-primary shadow-glow grid place-items-center">
-              <Activity className="h-4 w-4 text-primary-foreground" />
-            </div>
-            <span className="font-semibold tracking-tight hidden sm:inline">WashGrid</span>
+            <img src={logo} alt="Autowash Dashboard" className="h-8 w-8 rounded-lg object-contain bg-white" />
+            <span className="font-semibold tracking-tight hidden sm:inline">Autowash Dashboard</span>
           </Link>
           <nav className="flex items-center gap-1">
             <Link to="/dashboard">

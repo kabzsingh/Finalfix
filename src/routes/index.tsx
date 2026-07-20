@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Activity, Droplets, FlaskConical, Gauge, Shield } from "lucide-react";
+import logo from "@/assets/logo.jpg";
 
 export const Route = createFileRoute("/")({ component: Landing });
 
@@ -18,10 +19,8 @@ function Landing() {
       <header className="border-b border-border">
         <div className="container mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-gradient-primary shadow-glow grid place-items-center">
-              <Activity className="h-4 w-4 text-primary-foreground" />
-            </div>
-            <span className="font-semibold tracking-tight">WashGrid</span>
+            <img src={logo} alt="Autowash Dashboard" className="h-8 w-8 rounded-lg object-contain bg-white" />
+            <span className="font-semibold tracking-tight">Autowash Dashboard</span>
           </div>
           <div className="flex items-center gap-2">
             <Link to="/login"><Button variant="ghost" size="sm">Sign in</Button></Link>
@@ -39,7 +38,7 @@ function Landing() {
             Every wash, every drop, every chemical — <span className="bg-gradient-primary bg-clip-text text-transparent">in real time.</span>
           </h1>
           <p className="mt-5 text-base md:text-lg text-muted-foreground max-w-2xl mx-auto">
-            WashGrid streams wash counts, fresh water, and chemical levels from every site straight to one live dashboard. Built for fleets of 20+ wash sites running ESP32 meters.
+            Autowash Dashboard streams wash counts, fresh water, and chemical levels from every site straight to one live dashboard. Built for fleets of 20+ wash sites running ESP32 meters.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
             <Link to="/signup"><Button size="lg" className="shadow-glow">Start free</Button></Link>
@@ -90,7 +89,7 @@ x-site-api-key: ws_live_********
       </main>
 
       <footer className="border-t border-border py-6 text-center text-xs text-muted-foreground">
-        © {new Date().getFullYear()} WashGrid
+        © {new Date().getFullYear()} Autowash Dashboard
       </footer>
     </div>
   );

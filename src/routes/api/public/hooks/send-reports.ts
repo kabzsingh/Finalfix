@@ -185,7 +185,7 @@ async function processSite(db: Client, site: any, sendgridApiKey: string) {
   if (mErr) throw new Error(mErr.message);
   const results: any[] = [];
   const fromEmail = "autowashges@gmail.com";
-  const fromName = "WashGrid Reports";
+  const fromName = "Autowash Dashboard Reports";
   if (site.daily_report_enabled) {
     const r = await buildDailyReport(db, site, meters ?? []);
     const { error: dupErr } = await db.from("report_send_log").insert({ site_id: site.id, report_type: "daily", period_key: r.periodKey, recipients });
