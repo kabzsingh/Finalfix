@@ -106,7 +106,7 @@ function SiteReportsPage() {
       if (reportType === "daily") {
         csv += buildHourlyDailyCsv(meters || [], readings || [], startDate);
       } else {
-        csv += buildRawReadingsCsv(meters || [], readings || []);
+        csv += buildDailyMonthlyCsv(meters || [], readings || [], startDate, endDate);
       }
 
       // Chemical events section
@@ -232,9 +232,10 @@ function SiteReportsPage() {
                 </>
               ) : (
                 <>
-                  <li>✓ All meter readings for the month</li>
-                  <li>✓ Min/Max/Last values per meter</li>
-                  <li>✓ Chemical level events</li>
+                  <li>✓ Day-by-day breakdown for the month</li>
+                  <li>✓ Daily and Total for wash counts and water meters</li>
+                  <li>✓ Chemical status (OK/LOW) per day</li>
+                  <li>✓ Month summary + chemical level events</li>
                 </>
               )}
               <li>✓ Formatted as CSV (Excel compatible)</li>
@@ -350,30 +351,6 @@ function csvEscape(v: string | number) {
   return `"${String(v).replace(/"/g, '""')}"`;
 }
 
-// Builds the classic flat readings dump (used for monthly reports, where an
-// hour-by-hour table across 28-31 days would be unwieldy).
-function buildRawReadingsCsv(meters: any[], readings: any[]) {
-  let csv = `METER READINGS\n`;
-  csv += `Timestamp,Meter,Type,Value,Unit\n`;
-  readings.forEach((r: any) => {
-    const meter = meters.find((m: any) => m.id === r.meter_id);
-    csv += `${csvEscape(new Date(r.recorded_at).toLocaleString())},${csvEscape(meter?.name || "Unknown")},${csvEscape(meter?.meter_type || "")},${csvEscape(r.value)},${csvEscape(meter?.unit || "")}\n`;
-  });
-
-  csv += `\nSUMMARY\n`;
-  meters.forEach((meter: any) => {
-    const meterReadings = readings.filter((r: any) => r.meter_id === meter.id);
-    if (meterReadings.length > 0) {
-      const values = meterReadings.map((r: any) => Number(r.value));
-      const min = Math.min(...values);
-      const max = Math.max(...values);
-      const last = values[values.length - 1];
-      csv += `${meter.name},"Min: ${min}, Max: ${max}, Last: ${last}"\n`;
-    }
-  });
-  return csv;
-}
-
 // Builds an hour-by-hour table for a single day: one row per hour (00:00-23:00),
 // with Daily (used since midnight) and Total (raw cumulative reading) columns
 // for wash/fresh_water meters, and a chemical status column per chemical meter.
@@ -456,6 +433,100 @@ function buildHourlyDailyCsv(meters: any[], readings: any[], dayStart: Date) {
   });
   chemicalMeters.forEach((m) => {
     const state = valueAt(m.id, new Date(dayStart.getTime() + 24 * 3600 * 1000 - 1));
+    csv += `${csvEscape(m.name)},"${state === undefined ? "No data" : state >= 1 ? "LOW" : "OK"}"\n`;
+  });
+
+  return csv;
+}
+
+// Builds a day-by-day table for a month: one row per calendar day, with Daily
+// (used that day) and Total (raw cumulative reading at end of day) columns for
+// wash/fresh_water meters, and a chemical status column per chemical meter.
+function buildDailyMonthlyCsv(meters: any[], readings: any[], monthStart: Date, monthEnd: Date) {
+  const washFreshMeters = meters.filter((m) => m.meter_type === "wash" || m.meter_type === "fresh_water");
+  const chemicalMeters = meters.filter((m) => m.meter_type === "chemical" || m.meter_type === "chemical_flow");
+
+  const byMeter = new Map<string, any[]>();
+  readings.forEach((r: any) => {
+    if (!byMeter.has(r.meter_id)) byMeter.set(r.meter_id, []);
+    byMeter.get(r.meter_id)!.push(r);
+  });
+  byMeter.forEach((arr) => arr.sort((a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()));
+
+  const valueAt = (meterId: string, cutoff: Date): number | undefined => {
+    const arr = byMeter.get(meterId);
+    if (!arr || arr.length === 0) return undefined;
+    let result: number | undefined;
+    for (const r of arr) {
+      if (new Date(r.recorded_at).getTime() <= cutoff.getTime()) {
+        result = Number(r.value);
+      } else break;
+    }
+    return result;
+  };
+
+  // Baseline: the reading at/just before the start of the month (day-1's "yesterday")
+  const monthStartBoundary = new Date(monthStart);
+  monthStartBoundary.setHours(0, 0, 0, 0);
+  const baseline: Record<string, number> = {};
+  washFreshMeters.forEach((m) => {
+    baseline[m.id] = valueAt(m.id, new Date(monthStartBoundary.getTime() - 1)) ?? valueAt(m.id, monthStartBoundary) ?? 0;
+  });
+
+  let csv = `DAILY BREAKDOWN\n`;
+  const headerCols = ["Date"];
+  washFreshMeters.forEach((m) => {
+    headerCols.push(`${m.name} - Daily (${m.unit || (m.meter_type === "wash" ? "washes" : "")})`);
+    headerCols.push(`${m.name} - Total (${m.unit || (m.meter_type === "wash" ? "washes" : "")})`);
+  });
+  chemicalMeters.forEach((m) => {
+    headerCols.push(`${m.name} - Status`);
+  });
+  csv += headerCols.map(csvEscape).join(",") + "\n";
+
+  const now = new Date();
+  const daysInMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
+  const isCurrentMonth = now.getFullYear() === monthStart.getFullYear() && now.getMonth() === monthStart.getMonth();
+  const lastDay = isCurrentMonth ? now.getDate() : daysInMonth;
+
+  // Running "previous day total" per meter, starting from the baseline
+  const prevTotal: Record<string, number> = { ...baseline };
+
+  for (let d = 1; d <= lastDay; d++) {
+    const dayDate = new Date(monthStart.getFullYear(), monthStart.getMonth(), d);
+    const cutoff = new Date(dayDate);
+    cutoff.setHours(23, 59, 59, 999);
+    const row: (string | number)[] = [dayDate.toLocaleDateString()];
+
+    washFreshMeters.forEach((m) => {
+      const total = valueAt(m.id, cutoff);
+      if (total === undefined) {
+        row.push("—", "—");
+      } else {
+        const daily = Math.max(0, total - prevTotal[m.id]);
+        row.push(daily, total);
+        prevTotal[m.id] = total;
+      }
+    });
+
+    chemicalMeters.forEach((m) => {
+      const state = valueAt(m.id, cutoff);
+      row.push(state === undefined ? "—" : state >= 1 ? "LOW" : "OK");
+    });
+
+    csv += row.map(csvEscape).join(",") + "\n";
+  }
+
+  // Month summary
+  csv += `\nMONTH SUMMARY\n`;
+  const monthEndCutoff = new Date(monthEnd);
+  washFreshMeters.forEach((m) => {
+    const total = valueAt(m.id, monthEndCutoff) ?? baseline[m.id];
+    const monthlyUsed = Math.max(0, total - baseline[m.id]);
+    csv += `${csvEscape(m.name)},"Monthly: ${monthlyUsed}, Total: ${total}"\n`;
+  });
+  chemicalMeters.forEach((m) => {
+    const state = valueAt(m.id, monthEndCutoff);
     csv += `${csvEscape(m.name)},"${state === undefined ? "No data" : state >= 1 ? "LOW" : "OK"}"\n`;
   });
 
