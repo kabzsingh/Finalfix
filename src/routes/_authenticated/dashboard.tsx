@@ -21,6 +21,7 @@ interface SiteMetric {
   fresh_today: number;
   chemicals_total: number;
   chemicals_low: number;
+  is_new_today: boolean;
 }
 
 function DashboardPage() {
@@ -74,7 +75,7 @@ function DashboardPage() {
 
       const { data: sitesData } = await supabase
         .from("sites")
-        .select("id, name, location, logo_url")
+        .select("id, name, location, logo_url, created_at")
         .in("id", siteIds);
 
       if (!sitesData) {
@@ -87,6 +88,7 @@ function DashboardPage() {
         const todayMidnight = new Date();
         todayMidnight.setHours(0, 0, 0, 0);
         const midnightISO = todayMidnight.toISOString();
+        const isNewToday = new Date(site.created_at).getTime() >= todayMidnight.getTime();
 
         // Get latest readings
         const { data: latest } = await supabase
@@ -166,6 +168,7 @@ function DashboardPage() {
           fresh_today: freshToday,
           chemicals_total: chemTotal,
           chemicals_low: chemLow,
+          is_new_today: isNewToday,
         };
       });
 
@@ -261,7 +264,9 @@ function SiteCard({ site }: { site: SiteMetric }) {
             <div className="bg-slate-700 rounded-lg p-4 border border-slate-600">
               <div className="flex items-center gap-2 mb-2">
                 <Gauge className="h-4 w-4 text-cyan-400" />
-                <span className="text-[11px] font-semibold text-slate-300 uppercase tracking-wide">Today</span>
+                <span className="text-[11px] font-semibold text-slate-300 uppercase tracking-wide">
+                  {site.is_new_today ? "Since Setup" : "Today"}
+                </span>
               </div>
               <div className="text-2xl font-bold text-white">{site.wash_today}</div>
               <div className="text-xs text-slate-400 mt-1">washes</div>
@@ -284,7 +289,9 @@ function SiteCard({ site }: { site: SiteMetric }) {
                 <span className="text-[11px] font-semibold text-slate-300 uppercase tracking-wide">Fresh</span>
               </div>
               <div className="text-2xl font-bold text-white">{site.fresh_today.toFixed(0)}</div>
-              <div className="text-xs text-cyan-400 mt-1">liters</div>
+              <div className="text-xs text-cyan-400 mt-1">
+                {site.is_new_today ? "liters since setup" : "liters today"}
+              </div>
             </div>
 
             {/* Chemicals */}
