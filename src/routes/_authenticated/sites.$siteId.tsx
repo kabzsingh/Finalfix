@@ -224,38 +224,49 @@ function SiteDetail() {
     setTodays(todaysMap);
     setTotals(totalsMap);
 
-    // Fetch wash trend data (last 7 days for chart)
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60_000).toISOString();
-    const washMeterForTrend = (m as any)?.find((x: Meter) => x.meter_type === "wash");
-    if (washMeterForTrend) {
-      const { data: washReadings } = await supabase
+    // Fetch wash & water trend data: one data point per day for the last 7
+    // days (today plus the 6 days before it), instead of raw 15-second
+    // readings — a raw query with no row limit was silently hitting
+    // Supabase's default 1000-row cap, which for frequent readings only
+    // covered a few hours near the start of the window rather than the full week.
+    const dayCutoffs: Date[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const c = new Date();
+      c.setDate(c.getDate() - i);
+      if (i === 0) {
+        // today: use "now" as the cutoff so the last point reflects the latest reading
+      } else {
+        c.setHours(23, 59, 59, 999);
+      }
+      dayCutoffs.push(c);
+    }
+
+    const lastValueAtOrBefore = async (meterId: string, cutoff: Date) => {
+      const { data } = await supabase
         .from("readings")
         .select("value,recorded_at")
-        .eq("meter_id", washMeterForTrend.id)
-        .gte("recorded_at", sevenDaysAgo)
-        .order("recorded_at", { ascending: true });
-      
-      const trendData = (washReadings ?? []).map((r: any) => ({
-        time: new Date(r.recorded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-        washes: Number(r.value),
-      }));
+        .eq("meter_id", meterId)
+        .lte("recorded_at", cutoff.toISOString())
+        .order("recorded_at", { ascending: false })
+        .limit(1);
+      return data && data.length > 0 ? { value: Number(data[0].value), recorded_at: data[0].recorded_at } : null;
+    };
+
+    const washMeterForTrend = (m as any)?.find((x: Meter) => x.meter_type === "wash");
+    if (washMeterForTrend) {
+      const points = await Promise.all(dayCutoffs.map((c) => lastValueAtOrBefore(washMeterForTrend.id, c)));
+      const trendData = points
+        .map((p, i) => (p ? { time: dayCutoffs[i].toLocaleDateString("en-US", { month: "short", day: "numeric" }), washes: p.value } : null))
+        .filter((x): x is { time: string; washes: number } => x !== null);
       setWashTrendData(trendData);
     }
 
-    // Fetch water trend data (last 7 days for chart)
     const waterMeterForTrend = (m as any)?.find((x: Meter) => x.meter_type === "fresh_water");
     if (waterMeterForTrend) {
-      const { data: waterReadings } = await supabase
-        .from("readings")
-        .select("value,recorded_at")
-        .eq("meter_id", waterMeterForTrend.id)
-        .gte("recorded_at", sevenDaysAgo)
-        .order("recorded_at", { ascending: true });
-      
-      const trendData = (waterReadings ?? []).map((r: any) => ({
-        time: new Date(r.recorded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-        liters: Number(r.value),
-      }));
+      const points = await Promise.all(dayCutoffs.map((c) => lastValueAtOrBefore(waterMeterForTrend.id, c)));
+      const trendData = points
+        .map((p, i) => (p ? { time: dayCutoffs[i].toLocaleDateString("en-US", { month: "short", day: "numeric" }), liters: p.value } : null))
+        .filter((x): x is { time: string; liters: number } => x !== null);
       setWaterTrendData(trendData);
     }
 
