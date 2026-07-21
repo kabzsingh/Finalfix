@@ -602,9 +602,9 @@ function SiteDetail() {
         </div>
       )}
 
-      {washMeters.length > 1 || freshMeters.length > 1 ? (
+      {washMeters.length > 1 ? (
         <div>
-          <h2 className="text-lg font-semibold mb-4">Water Meters</h2>
+          <h2 className="text-lg font-semibold mb-4">Wash Meters</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {washMeters.map((m) => (
               <div key={m.id} className="space-y-2">
@@ -621,6 +621,14 @@ function SiteDetail() {
                 <AdminAdjust meterId={m.id} siteId={siteId} unit={m.unit} onSaved={load} />
               </div>
             ))}
+          </div>
+        </div>
+      ) : null}
+
+      {freshMeters.length > 1 ? (
+        <div>
+          <h2 className="text-lg font-semibold mb-4">Water Meters</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {freshMeters.map((m) => (
               <div key={m.id} className="space-y-2">
                 <MeterCard
