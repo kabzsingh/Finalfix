@@ -22,6 +22,7 @@ interface SiteMetric {
   chemicals_total: number;
   chemicals_low: number;
   is_new_today: boolean;
+  fresh_water_alert: boolean;
 }
 
 function DashboardPage() {
@@ -75,7 +76,7 @@ function DashboardPage() {
 
       const { data: sitesData } = await supabase
         .from("sites")
-        .select("id, name, location, logo_url, created_at")
+        .select("id, name, location, logo_url, created_at, fresh_water_daily_threshold_liters")
         .in("id", siteIds);
 
       if (!sitesData) {
@@ -169,6 +170,9 @@ function DashboardPage() {
           chemicals_total: chemTotal,
           chemicals_low: chemLow,
           is_new_today: isNewToday,
+          fresh_water_alert:
+            site.fresh_water_daily_threshold_liters != null &&
+            freshToday > Number(site.fresh_water_daily_threshold_liters),
         };
       });
 
@@ -283,13 +287,31 @@ function SiteCard({ site }: { site: SiteMetric }) {
             </div>
 
             {/* Fresh Water */}
-            <div className="bg-slate-700 rounded-lg p-4 border border-slate-600">
+            <div
+              className={`rounded-lg p-4 border ${
+                site.fresh_water_alert
+                  ? "bg-red-950/40 border-red-500/60"
+                  : "bg-slate-700 border-slate-600"
+              }`}
+            >
               <div className="flex items-center gap-2 mb-2">
-                <Droplets className="h-4 w-4 text-cyan-400" />
-                <span className="text-[11px] font-semibold text-slate-300 uppercase tracking-wide">Fresh</span>
+                {site.fresh_water_alert ? (
+                  <AlertTriangle className="h-4 w-4 text-red-400" />
+                ) : (
+                  <Droplets className="h-4 w-4 text-cyan-400" />
+                )}
+                <span
+                  className={`text-[11px] font-semibold uppercase tracking-wide ${
+                    site.fresh_water_alert ? "text-red-300" : "text-slate-300"
+                  }`}
+                >
+                  Fresh{site.fresh_water_alert ? " – High Usage" : ""}
+                </span>
               </div>
-              <div className="text-2xl font-bold text-white">{site.fresh_today.toFixed(0)}</div>
-              <div className="text-xs text-cyan-400 mt-1">
+              <div className={`text-2xl font-bold ${site.fresh_water_alert ? "text-red-300" : "text-white"}`}>
+                {site.fresh_today.toFixed(0)}
+              </div>
+              <div className={`text-xs mt-1 ${site.fresh_water_alert ? "text-red-300/80" : "text-cyan-400"}`}>
                 {site.is_new_today ? "liters since setup" : "liters today"}
               </div>
             </div>

@@ -33,6 +33,7 @@ interface Site {
   primary_color?: string;
   secondary_color?: string;
   accent_color?: string;
+  fresh_water_daily_threshold_liters?: number | null;
 }
 interface Meter { id: string; site_id: string; meter_type: "wash"|"fresh_water"|"chemical"|"chemical_flow"; name: string; unit: string; capacity: number | null; low_threshold: number | null; device_key: string; position: number; chemical_group: string | null }
 interface ApiKeyRow { id: string; site_id: string; key_prefix: string; label: string | null; revoked: boolean; last_used_at: string | null; created_at: string }
@@ -900,8 +901,69 @@ function SiteAdminCard({
         </div>
 
         <div className="pt-4 border-t border-border/60">
+          <WaterAlertSettings site={site} onSaved={() => { /* parent will refetch on next mount */ }} />
+        </div>
+
+        <div className="pt-4 border-t border-border/60">
           <ReportSettings site={site} onSaved={() => { /* parent will refetch on next mount */ }} />
         </div>
+      </div>
+    </div>
+  );
+}
+
+function WaterAlertSettings({ site, onSaved }: { site: Site; onSaved: () => void }) {
+  const [threshold, setThreshold] = useState<string>(
+    site.fresh_water_daily_threshold_liters != null ? String(site.fresh_water_daily_threshold_liters) : ""
+  );
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    const value = threshold.trim() ? Number(threshold) : null;
+    if (value != null && (Number.isNaN(value) || value < 0)) {
+      setSaving(false);
+      return toast.error("Enter a valid number of liters");
+    }
+    const { error } = await supabase
+      .from("sites")
+      .update({ fresh_water_daily_threshold_liters: value })
+      .eq("id", site.id);
+    setSaving(false);
+    if (error) return toast.error(error.message);
+    toast.success("Water alert threshold saved");
+    onSaved();
+  };
+
+  return (
+    <div className="rounded-xl border border-border/50 bg-primary/5 p-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div className="flex items-center gap-3">
+          <div className="h-8 w-8 rounded bg-primary/20 flex items-center justify-center">
+            <AlertTriangle className="h-4 w-4 text-primary" />
+          </div>
+          <div>
+            <h4 className="text-sm font-bold uppercase tracking-widest text-primary/80">Fresh Water Daily Alert</h4>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Flag this site on the main dashboard if today's fresh water usage exceeds the limit below.</p>
+          </div>
+        </div>
+        <Button size="sm" onClick={save} disabled={saving} className="h-8 text-xs font-bold">
+          {saving ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : null}
+          Save Threshold
+        </Button>
+      </div>
+
+      <div className="max-w-xs space-y-2">
+        <Label className="text-xs font-semibold">Daily Limit (liters)</Label>
+        <Input
+          type="number"
+          min={0}
+          className="h-9 bg-background"
+          value={threshold}
+          onChange={(e) => setThreshold(e.target.value)}
+          placeholder="e.g. 20000"
+        />
+        <p className="text-[10px] text-muted-foreground/70 px-1">Leave blank to disable this alert for the site.</p>
       </div>
     </div>
   );
