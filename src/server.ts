@@ -5,6 +5,7 @@ import { renderErrorPage } from "./lib/error-page";
 import { handleApiRequest } from "./api/index";
 import { type Env } from "./lib/supabase";
 import { setRuntimeEnv } from "./lib/runtime-env";
+import { runSendReports } from "./lib/send-reports";
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
@@ -94,21 +95,17 @@ export default {
   async scheduled(_event: unknown, env: unknown, _ctx: unknown) {
     setRuntimeEnv(env as Env);
 
-    // Use an env var for the worker base URL so deployments (preview/prod) can point to the
-    // appropriate worker without changing source. Set WORKER_BASE_URL (or WORKER_URL) in
-    // Cloudflare → Workers → Settings → Variables & Secrets.
-    const runtime = env as Env;
-    const baseUrl =
-      runtime?.WORKER_BASE_URL || runtime?.WORKER_URL || "https://auto.washdashboard.workers.dev";
-
+    // Previously this made an HTTP request back to the worker's own URL to
+    // trigger report sending — but that URL had to be guessed (or manually
+    // configured via WORKER_BASE_URL/WORKER_URL), and if it didn't match the
+    // actual deployed worker, the request silently failed every hour with
+    // nothing visible outside Cloudflare's own logs. Calling the report logic
+    // directly removes that failure mode entirely.
     try {
-      const res = await fetch(`${baseUrl}/api/public/hooks/send-reports`, {
-        method: "POST",
-      });
-      const json = await res.json();
-      console.log("Cron send-reports:", JSON.stringify(json));
+      const result = await runSendReports(env as Env);
+      console.log("Cron send-reports:", JSON.stringify(result));
     } catch (e) {
-      console.error("Cron failed:", e);
+      console.error("Cron send-reports failed:", e);
     }
   },
 };
