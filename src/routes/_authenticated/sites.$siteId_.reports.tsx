@@ -40,38 +40,62 @@ function SiteReportsPage() {
   const fetchAllReadings = async (siteId: string, startISO: string, endISO: string) => {
     const pageSize = 1000;
 
-    // Get the total row count first so we can fetch all pages in parallel
-    // instead of one-at-a-time (a full day can be 30,000+ rows across 6 meters,
-    // and sequential round-trips for that many pages was taking too long).
-    const { count, error: countError } = await supabase
+    // First page also returns an ESTIMATED count (cheap — uses Postgres
+    // planner statistics) so we know how many more pages to fetch, without
+    // the cost of an EXACT count (a full table scan across every site's
+    // readings, which can be slow enough on a large table to hang the request).
+    const firstPage = await supabase
       .from("readings")
-      .select("id", { count: "exact", head: true })
+      .select("meter_id, value, recorded_at", { count: "estimated" })
       .eq("site_id", siteId)
       .gte("recorded_at", startISO)
-      .lte("recorded_at", endISO);
-    if (countError) throw countError;
+      .lte("recorded_at", endISO)
+      .order("recorded_at", { ascending: true })
+      .range(0, pageSize - 1);
+    if (firstPage.error) throw firstPage.error;
 
-    const total = count ?? 0;
-    if (total === 0) return [];
+    let all: any[] = firstPage.data ?? [];
+    const estimatedTotal = firstPage.count ?? all.length;
 
-    const pageCount = Math.ceil(total / pageSize);
-    const pagePromises = Array.from({ length: pageCount }, (_, i) => {
-      const from = i * pageSize;
-      return supabase
-        .from("readings")
-        .select("meter_id, value, recorded_at")
-        .eq("site_id", siteId)
-        .gte("recorded_at", startISO)
-        .lte("recorded_at", endISO)
-        .order("recorded_at", { ascending: true })
-        .range(from, from + pageSize - 1);
-    });
+    if (all.length === pageSize && estimatedTotal > pageSize) {
+      const pageCount = Math.ceil(estimatedTotal / pageSize) - 1;
+      const pagePromises = Array.from({ length: pageCount }, (_, i) => {
+        const from = (i + 1) * pageSize;
+        return supabase
+          .from("readings")
+          .select("meter_id, value, recorded_at")
+          .eq("site_id", siteId)
+          .gte("recorded_at", startISO)
+          .lte("recorded_at", endISO)
+          .order("recorded_at", { ascending: true })
+          .range(from, from + pageSize - 1);
+      });
+      const results = await Promise.all(pagePromises);
+      for (const { data, error } of results) {
+        if (error) throw error;
+        if (data) all = all.concat(data);
+      }
 
-    const results = await Promise.all(pagePromises);
-    let all: any[] = [];
-    for (const { data, error } of results) {
-      if (error) throw error;
-      if (data) all = all.concat(data);
+      // Estimated counts can drift from the real total. If the very last page
+      // we fetched came back completely full, there may be more rows beyond
+      // what the estimate suggested — keep fetching sequentially until a
+      // partial (or empty) page confirms we've reached the end.
+      let lastPageLen = results.length > 0 ? (results[results.length - 1].data?.length ?? 0) : firstPage.data?.length ?? 0;
+      let nextFrom = pageCount * pageSize + pageSize;
+      while (lastPageLen === pageSize) {
+        const extra = await supabase
+          .from("readings")
+          .select("meter_id, value, recorded_at")
+          .eq("site_id", siteId)
+          .gte("recorded_at", startISO)
+          .lte("recorded_at", endISO)
+          .order("recorded_at", { ascending: true })
+          .range(nextFrom, nextFrom + pageSize - 1);
+        if (extra.error) throw extra.error;
+        lastPageLen = extra.data?.length ?? 0;
+        if (extra.data) all = all.concat(extra.data);
+        nextFrom += pageSize;
+      }
     }
     return all;
   };
@@ -79,9 +103,24 @@ function SiteReportsPage() {
   const generateReport = async () => {
     setLoading(true);
     try {
-      // Get date range
-      const reportDate = new Date(selectedDate);
-      let startDate, endDate, fileName;
+      await Promise.race([
+        generateReportInner(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Report generation timed out after 45s — try a shorter date range, or check your connection.")), 45000)
+        ),
+      ]);
+    } catch (e: any) {
+      console.error("Error generating report:", e);
+      toast.error(e.message || "Failed to generate report");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generateReportInner = async () => {
+    // Get date range
+    const reportDate = new Date(selectedDate);
+    let startDate, endDate, fileName;
 
       if (reportType === "daily") {
         startDate = new Date(reportDate);
@@ -149,12 +188,6 @@ function SiteReportsPage() {
       window.URL.revokeObjectURL(url);
 
       toast.success(`Report downloaded: ${fileName}`);
-    } catch (e: any) {
-      console.error("Error generating report:", e);
-      toast.error(e.message || "Failed to generate report");
-    } finally {
-      setLoading(false);
-    }
   };
 
   // Get available dates for picker
