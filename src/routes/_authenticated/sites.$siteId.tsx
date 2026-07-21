@@ -858,49 +858,6 @@ function SiteDetail() {
           </div>
         </div>
       )}
-
-      {/* Live reading history */}
-      <div className="rounded-xl border border-border bg-card shadow-card overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <div className="flex items-center gap-2">
-            <Radio className={`h-4 w-4 ${isOnline ? "text-success animate-pulse" : "text-muted-foreground/40"}`} />
-            <h2 className="font-semibold text-sm">Live reading history</h2>
-          </div>
-          <span className="text-[11px] text-muted-foreground">last 20 events · updates in real-time</span>
-        </div>
-        {liveEntries.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            Waiting for incoming readings…
-          </div>
-        ) : (
-          <ul className="divide-y divide-border max-h-72 overflow-y-auto">
-            {liveEntries.map((entry) => {
-              const delta = Math.max(0, Math.floor((now - new Date(entry.recorded_at).getTime()) / 1000));
-              const lbl = delta < 5 ? "just now" : delta < 60 ? `${delta}s ago` : delta < 3600 ? `${Math.floor(delta / 60)}m ago` : `${Math.floor(delta / 3600)}h ago`;
-              const val = entry.value;
-              const display =
-                entry.meter_type === "wash" ? `+${Math.round(val)} wash${Math.round(val) === 1 ? "" : "es"}` :
-                entry.meter_type === "fresh_water" ? `+${val.toFixed(1)} L` :
-                entry.meter_type === "chemical" ? (val >= 1 ? "⚠ Chemical LOW" : "✓ Chemical OK") :
-                `+${val.toFixed(2)} ${entry.unit}`;
-              const tone = entry.meter_type === "chemical"
-                ? (val >= 1 ? "text-destructive" : "text-success")
-                : "text-foreground";
-              return (
-                <li key={entry.id} className="px-4 py-2 flex items-center justify-between gap-3 text-sm">
-                  <div className="min-w-0">
-                    <div className="font-medium truncate">{entry.meter_name}</div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className={`font-semibold tabular-nums ${tone}`}>{display}</div>
-                    <div className="text-[11px] text-muted-foreground">{lbl}</div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
     </div>
   );
 }
