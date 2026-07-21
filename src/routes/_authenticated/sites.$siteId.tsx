@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, Activity, Droplets, FlaskConical, Gauge, Pencil, Radio, TrendingUp, FileText } from "lucide-react";
+import { ArrowLeft, Activity, AlertTriangle, Droplets, FlaskConical, Gauge, Pencil, Radio, TrendingUp, FileText } from "lucide-react";
 import { MeterCard } from "@/components/app/MeterCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,7 +48,7 @@ interface ChemLowEvent {
 function SiteDetail() {
   const { siteId } = Route.useParams();
   const navigate = useNavigate();
-  const [site, setSite] = useState<{ name: string; location: string | null } | null>(null);
+  const [site, setSite] = useState<{ name: string; location: string | null; fresh_water_daily_threshold_liters: number | null } | null>(null);
   const [meters, setMeters] = useState<Meter[]>([]);
   const [readings, setReadings] = useState<Reading[]>([]);
   const [totals, setTotals] = useState<Record<string, number>>({});
@@ -77,7 +77,7 @@ function SiteDetail() {
 
   const load = async () => {
     const [{ data: s }, { data: m }, { data: apiKeys }] = await Promise.all([
-      supabase.from("sites").select("name,location").eq("id", siteId).single(),
+      supabase.from("sites").select("name,location,fresh_water_daily_threshold_liters").eq("id", siteId).single(),
       supabase
         .from("site_meters")
         .select("id,meter_type,name,unit,capacity,low_threshold,device_key,position,chemical_group")
@@ -452,13 +452,57 @@ function SiteDetail() {
           <div className="text-sm text-slate-500 mt-2">total washes</div>
         </div>
 
-        <div className="bg-blue-50 rounded-lg p-6 border border-blue-200">
+        <div
+          className={`rounded-lg p-6 border ${
+            site?.fresh_water_daily_threshold_liters != null &&
+            stats.freshToday > Number(site.fresh_water_daily_threshold_liters)
+              ? "bg-red-50 border-red-300"
+              : "bg-blue-50 border-blue-200"
+          }`}
+        >
           <div className="flex items-center gap-2 mb-2">
-            <Droplets className="h-5 w-5 text-blue-600" />
-            <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Water Today</span>
+            {site?.fresh_water_daily_threshold_liters != null &&
+            stats.freshToday > Number(site.fresh_water_daily_threshold_liters) ? (
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+            ) : (
+              <Droplets className="h-5 w-5 text-blue-600" />
+            )}
+            <span
+              className={`text-xs font-semibold uppercase tracking-wide ${
+                site?.fresh_water_daily_threshold_liters != null &&
+                stats.freshToday > Number(site.fresh_water_daily_threshold_liters)
+                  ? "text-red-700"
+                  : "text-slate-600"
+              }`}
+            >
+              Water Today
+              {site?.fresh_water_daily_threshold_liters != null &&
+                stats.freshToday > Number(site.fresh_water_daily_threshold_liters) &&
+                " – High Usage"}
+            </span>
           </div>
-          <div className="text-3xl font-bold text-blue-900">{stats.freshToday.toFixed(0)}</div>
-          <div className="text-sm text-blue-600 mt-2">liters</div>
+          <div
+            className={`text-3xl font-bold ${
+              site?.fresh_water_daily_threshold_liters != null &&
+              stats.freshToday > Number(site.fresh_water_daily_threshold_liters)
+                ? "text-red-700"
+                : "text-blue-900"
+            }`}
+          >
+            {stats.freshToday.toFixed(0)}
+          </div>
+          <div
+            className={`text-sm mt-2 ${
+              site?.fresh_water_daily_threshold_liters != null &&
+              stats.freshToday > Number(site.fresh_water_daily_threshold_liters)
+                ? "text-red-600"
+                : "text-blue-600"
+            }`}
+          >
+            liters
+            {site?.fresh_water_daily_threshold_liters != null &&
+              ` (limit ${Number(site.fresh_water_daily_threshold_liters).toFixed(0)}L)`}
+          </div>
         </div>
 
         <div className="bg-blue-50 rounded-lg p-6 border border-blue-200">
