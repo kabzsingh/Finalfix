@@ -144,7 +144,7 @@ function DashboardPage() {
             washTotal = latestValue;
             washToday = Math.max(0, latestValue - midnightValue);
           } else if (meter.meter_type === "fresh_water") {
-            freshToday = latestValue;
+            freshToday = Math.max(0, latestValue - midnightValue);
           } else if (meter.meter_type === "chemical") {
             chemTotal++;
             if (latestValue >= 1) chemLow++;
