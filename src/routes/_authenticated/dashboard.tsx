@@ -144,10 +144,10 @@ function DashboardPage() {
           const midnightValue = midnightByMeter.has(meterId) ? Number(midnightByMeter.get(meterId).value) : 0;
 
           if (meter.meter_type === "wash") {
-            washTotal = latestValue;
-            washToday = Math.max(0, latestValue - midnightValue);
+            washTotal += latestValue;
+            washToday += Math.max(0, latestValue - midnightValue);
           } else if (meter.meter_type === "fresh_water") {
-            freshToday = Math.max(0, latestValue - midnightValue);
+            freshToday += Math.max(0, latestValue - midnightValue);
           } else if (meter.meter_type === "chemical") {
             chemTotal++;
             if (latestValue >= 1) chemLow++;
