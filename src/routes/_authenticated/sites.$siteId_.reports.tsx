@@ -39,10 +39,25 @@ function SiteReportsPage() {
 
   const fetchAllReadings = async (siteId: string, startISO: string, endISO: string) => {
     const pageSize = 1000;
-    let from = 0;
-    let all: any[] = [];
-    while (true) {
-      const { data, error } = await supabase
+
+    // Get the total row count first so we can fetch all pages in parallel
+    // instead of one-at-a-time (a full day can be 30,000+ rows across 6 meters,
+    // and sequential round-trips for that many pages was taking too long).
+    const { count, error: countError } = await supabase
+      .from("readings")
+      .select("id", { count: "exact", head: true })
+      .eq("site_id", siteId)
+      .gte("recorded_at", startISO)
+      .lte("recorded_at", endISO);
+    if (countError) throw countError;
+
+    const total = count ?? 0;
+    if (total === 0) return [];
+
+    const pageCount = Math.ceil(total / pageSize);
+    const pagePromises = Array.from({ length: pageCount }, (_, i) => {
+      const from = i * pageSize;
+      return supabase
         .from("readings")
         .select("meter_id, value, recorded_at")
         .eq("site_id", siteId)
@@ -50,11 +65,13 @@ function SiteReportsPage() {
         .lte("recorded_at", endISO)
         .order("recorded_at", { ascending: true })
         .range(from, from + pageSize - 1);
+    });
+
+    const results = await Promise.all(pagePromises);
+    let all: any[] = [];
+    for (const { data, error } of results) {
       if (error) throw error;
-      if (!data || data.length === 0) break;
-      all = all.concat(data);
-      if (data.length < pageSize) break;
-      from += pageSize;
+      if (data) all = all.concat(data);
     }
     return all;
   };
@@ -80,11 +97,6 @@ function SiteReportsPage() {
         fileName = `${siteName}_Monthly_Report_${reportDate.getFullYear()}-${String(reportDate.getMonth() + 1).padStart(2, "0")}.csv`;
       }
 
-      // Fetch ALL readings for the period (paginated — a single query silently
-      // caps at Supabase's default 1000-row limit, which for a busy multi-meter
-      // site truncates a full day down to under an hour of data).
-      const readings = await fetchAllReadings(siteId, startDate.toISOString(), endDate.toISOString());
-
       const { data: meters } = await supabase
         .from("site_meters")
         .select("id, name, meter_type, unit")
@@ -104,9 +116,15 @@ function SiteReportsPage() {
       csv += `Generated: ${new Date().toLocaleString()}\n\n`;
 
       if (reportType === "daily") {
-        csv += buildHourlyDailyCsv(meters || [], readings || [], startDate);
+        // A day's worth of readings is bounded (~30-40k rows for a busy site),
+        // so a parallel paginated fetch is fine here.
+        const readings = await fetchAllReadings(siteId, startDate.toISOString(), endDate.toISOString());
+        csv += buildHourlyDailyCsv(meters || [], readings, startDate);
       } else {
-        csv += buildDailyMonthlyCsv(meters || [], readings || [], startDate, endDate);
+        // A full month of raw 15-second readings could be 900,000+ rows — far
+        // more than we need, since the report only needs the value at each
+        // day's end. Fetch those specific points directly instead of the bulk data.
+        csv += await buildDailyMonthlyCsv(meters || [], siteId, startDate, endDate);
       }
 
       // Chemical events section
@@ -442,35 +460,57 @@ function buildHourlyDailyCsv(meters: any[], readings: any[], dayStart: Date) {
 // Builds a day-by-day table for a month: one row per calendar day, with Daily
 // (used that day) and Total (raw cumulative reading at end of day) columns for
 // wash/fresh_water meters, and a chemical status column per chemical meter.
-function buildDailyMonthlyCsv(meters: any[], readings: any[], monthStart: Date, monthEnd: Date) {
+//
+// Rather than downloading every raw reading for the month (which for 15-second
+// interval data across several meters could be 900,000+ rows), this fetches
+// only the single last reading at/before each day boundary, per meter — all in
+// parallel — which is all the report actually needs.
+async function buildDailyMonthlyCsv(meters: any[], siteId: string, monthStart: Date, monthEnd: Date) {
   const washFreshMeters = meters.filter((m) => m.meter_type === "wash" || m.meter_type === "fresh_water");
   const chemicalMeters = meters.filter((m) => m.meter_type === "chemical" || m.meter_type === "chemical_flow");
+  const allMeters = [...washFreshMeters, ...chemicalMeters];
 
-  const byMeter = new Map<string, any[]>();
-  readings.forEach((r: any) => {
-    if (!byMeter.has(r.meter_id)) byMeter.set(r.meter_id, []);
-    byMeter.get(r.meter_id)!.push(r);
-  });
-  byMeter.forEach((arr) => arr.sort((a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()));
+  const now = new Date();
+  const daysInMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
+  const isCurrentMonth = now.getFullYear() === monthStart.getFullYear() && now.getMonth() === monthStart.getMonth();
+  const lastDay = isCurrentMonth ? now.getDate() : daysInMonth;
 
-  const valueAt = (meterId: string, cutoff: Date): number | undefined => {
-    const arr = byMeter.get(meterId);
-    if (!arr || arr.length === 0) return undefined;
-    let result: number | undefined;
-    for (const r of arr) {
-      if (new Date(r.recorded_at).getTime() <= cutoff.getTime()) {
-        result = Number(r.value);
-      } else break;
-    }
-    return result;
-  };
-
-  // Baseline: the reading at/just before the start of the month (day-1's "yesterday")
   const monthStartBoundary = new Date(monthStart);
   monthStartBoundary.setHours(0, 0, 0, 0);
+
+  // One cutoff per day-end, plus a baseline cutoff just before the month starts.
+  const cutoffs: Date[] = [new Date(monthStartBoundary.getTime() - 1)];
+  for (let d = 1; d <= lastDay; d++) {
+    const c = new Date(monthStart.getFullYear(), monthStart.getMonth(), d);
+    c.setHours(23, 59, 59, 999);
+    cutoffs.push(c);
+  }
+
+  // Fetch, for every (meter, cutoff) pair, the single last reading at/before
+  // that cutoff — all requests fired in parallel.
+  const pointQueries = allMeters.flatMap((m) =>
+    cutoffs.map(async (cutoff) => {
+      const { data, error } = await supabase
+        .from("readings")
+        .select("value, recorded_at")
+        .eq("meter_id", m.id)
+        .lte("recorded_at", cutoff.toISOString())
+        .order("recorded_at", { ascending: false })
+        .limit(1);
+      if (error) throw error;
+      return { meterId: m.id, cutoffTime: cutoff.getTime(), value: data && data.length > 0 ? Number(data[0].value) : undefined };
+    })
+  );
+  const points = await Promise.all(pointQueries);
+
+  const valueAtCutoff = new Map<string, number | undefined>();
+  points.forEach((p) => valueAtCutoff.set(`${p.meterId}:${p.cutoffTime}`, p.value));
+  const valueAt = (meterId: string, cutoff: Date) => valueAtCutoff.get(`${meterId}:${cutoff.getTime()}`);
+
+  const baselineCutoff = cutoffs[0];
   const baseline: Record<string, number> = {};
   washFreshMeters.forEach((m) => {
-    baseline[m.id] = valueAt(m.id, new Date(monthStartBoundary.getTime() - 1)) ?? valueAt(m.id, monthStartBoundary) ?? 0;
+    baseline[m.id] = valueAt(m.id, baselineCutoff) ?? 0;
   });
 
   let csv = `DAILY BREAKDOWN\n`;
@@ -484,18 +524,12 @@ function buildDailyMonthlyCsv(meters: any[], readings: any[], monthStart: Date, 
   });
   csv += headerCols.map(csvEscape).join(",") + "\n";
 
-  const now = new Date();
-  const daysInMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
-  const isCurrentMonth = now.getFullYear() === monthStart.getFullYear() && now.getMonth() === monthStart.getMonth();
-  const lastDay = isCurrentMonth ? now.getDate() : daysInMonth;
-
   // Running "previous day total" per meter, starting from the baseline
   const prevTotal: Record<string, number> = { ...baseline };
 
   for (let d = 1; d <= lastDay; d++) {
     const dayDate = new Date(monthStart.getFullYear(), monthStart.getMonth(), d);
-    const cutoff = new Date(dayDate);
-    cutoff.setHours(23, 59, 59, 999);
+    const cutoff = cutoffs[d]; // cutoffs[0] is the baseline; day d's cutoff is at index d
     const row: (string | number)[] = [dayDate.toLocaleDateString()];
 
     washFreshMeters.forEach((m) => {
@@ -519,7 +553,7 @@ function buildDailyMonthlyCsv(meters: any[], readings: any[], monthStart: Date, 
 
   // Month summary
   csv += `\nMONTH SUMMARY\n`;
-  const monthEndCutoff = new Date(monthEnd);
+  const monthEndCutoff = cutoffs[lastDay];
   washFreshMeters.forEach((m) => {
     const total = valueAt(m.id, monthEndCutoff) ?? baseline[m.id];
     const monthlyUsed = Math.max(0, total - baseline[m.id]);
