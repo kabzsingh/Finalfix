@@ -229,8 +229,15 @@ function SiteDetail() {
     // readings — a raw query with no row limit was silently hitting
     // Supabase's default 1000-row cap, which for frequent readings only
     // covered a few hours near the start of the window rather than the full week.
+    //
+    // Meters are cumulative counters, so the chart needs the DAILY delta
+    // (today's value minus yesterday's value), not the raw running total —
+    // otherwise every site's trend line just looks like a flat/climbing
+    // staircase near its lifetime total instead of showing daily activity.
+    // dayCutoffs[0] is a baseline (end of the day before the 7-day window)
+    // used only to compute the delta for the first displayed day.
     const dayCutoffs: Date[] = [];
-    for (let i = 6; i >= 0; i--) {
+    for (let i = 7; i >= 0; i--) {
       const c = new Date();
       c.setDate(c.getDate() - i);
       if (i === 0) {
@@ -252,21 +259,33 @@ function SiteDetail() {
       return data && data.length > 0 ? { value: Number(data[0].value), recorded_at: data[0].recorded_at } : null;
     };
 
+    const dailyDeltas = (points: ({ value: number; recorded_at: string } | null)[]) => {
+      // points[0] is the baseline; points[1..7] are the 7 displayed days
+      const result: { time: string; value: number }[] = [];
+      for (let i = 1; i < points.length; i++) {
+        const cur = points[i];
+        const prev = points[i - 1];
+        if (!cur) continue;
+        const prevValue = prev ? prev.value : cur.value;
+        result.push({
+          time: dayCutoffs[i].toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+          value: Math.max(0, cur.value - prevValue),
+        });
+      }
+      return result;
+    };
+
     const washMeterForTrend = (m as any)?.find((x: Meter) => x.meter_type === "wash");
     if (washMeterForTrend) {
       const points = await Promise.all(dayCutoffs.map((c) => lastValueAtOrBefore(washMeterForTrend.id, c)));
-      const trendData = points
-        .map((p, i) => (p ? { time: dayCutoffs[i].toLocaleDateString("en-US", { month: "short", day: "numeric" }), washes: p.value } : null))
-        .filter((x): x is { time: string; washes: number } => x !== null);
+      const trendData = dailyDeltas(points).map((d) => ({ time: d.time, washes: d.value }));
       setWashTrendData(trendData);
     }
 
     const waterMeterForTrend = (m as any)?.find((x: Meter) => x.meter_type === "fresh_water");
     if (waterMeterForTrend) {
       const points = await Promise.all(dayCutoffs.map((c) => lastValueAtOrBefore(waterMeterForTrend.id, c)));
-      const trendData = points
-        .map((p, i) => (p ? { time: dayCutoffs[i].toLocaleDateString("en-US", { month: "short", day: "numeric" }), liters: p.value } : null))
-        .filter((x): x is { time: string; liters: number } => x !== null);
+      const trendData = dailyDeltas(points).map((d) => ({ time: d.time, liters: d.value }));
       setWaterTrendData(trendData);
     }
 
@@ -531,7 +550,7 @@ function SiteDetail() {
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6">
           <h2 className="text-xl font-semibold text-slate-900 mb-6 flex items-center gap-2">
             <TrendingUp className="h-5 w-5 text-slate-600" />
-            7-Day Wash Trend
+            7-Day Wash Trend <span className="text-sm font-normal text-slate-500">(daily washes)</span>
           </h2>
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={washTrendData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
@@ -574,7 +593,7 @@ function SiteDetail() {
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6">
           <h2 className="text-xl font-semibold text-slate-900 mb-6 flex items-center gap-2">
             <Droplets className="h-5 w-5 text-blue-600" />
-            7-Day Fresh Water Trend
+            7-Day Fresh Water Trend <span className="text-sm font-normal text-slate-500">(daily liters)</span>
           </h2>
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={waterTrendData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
