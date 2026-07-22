@@ -188,10 +188,10 @@ function DashboardPage() {
   if (authLoading || loading) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="h-10 w-48 bg-slate-200 rounded animate-pulse mb-8" />
+        <div className="h-10 w-48 bg-muted rounded animate-pulse mb-8" />
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[...Array(6)].map((_, i) => (
-            <div key={i} className="h-64 bg-slate-100 rounded-lg animate-pulse" />
+            <div key={i} className="h-64 bg-muted rounded-lg animate-pulse" />
           ))}
         </div>
       </div>
@@ -203,16 +203,16 @@ function DashboardPage() {
       {/* Header */}
       <div className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-white">Operations Dashboard</h1>
-          <p className="text-slate-400 mt-2">Real-time monitoring of all wash sites</p>
+          <h1 className="text-4xl font-bold tracking-tight text-foreground">Operations Dashboard</h1>
+          <p className="text-muted-foreground mt-2">Real-time monitoring of all wash sites</p>
         </div>
         <ThemeToggle />
       </div>
 
       {/* Sites Grid */}
       {sites.length === 0 ? (
-        <div className="text-center py-16 bg-slate-800 rounded-xl border border-slate-700">
-          <p className="text-slate-400 text-lg">No sites configured yet</p>
+        <div className="text-center py-16 bg-card rounded-xl border border-border">
+          <p className="text-muted-foreground text-lg">No sites configured yet</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -230,20 +230,20 @@ function SiteCard({ site }: { site: SiteMetric }) {
 
   return (
     <Link to="/sites/$siteId" params={{ siteId: site.id }}>
-      <div className="group relative bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-md transition-all h-full cursor-pointer overflow-hidden">
+      <div className="group relative bg-card border border-border rounded-xl shadow-sm hover:shadow-md transition-all h-full cursor-pointer overflow-hidden">
         {/* Top bar with status */}
-        <div className="absolute top-0 left-0 right-0 h-1 bg-slate-700">
+        <div className="absolute top-0 left-0 right-0 h-1 bg-muted">
           <div
-            className={`h-full transition-all ${site.online ? "bg-emerald-500 w-full" : "bg-slate-600 w-1/4"}`}
+            className={`h-full transition-all ${site.online ? "bg-emerald-500 w-full" : "bg-muted-foreground/40 w-1/4"}`}
           />
         </div>
 
         <div className="p-6 pt-8">
           {/* Header - No Logo */}
           <div className="mb-6">
-            <h3 className="font-semibold text-white text-lg">{site.name}</h3>
+            <h3 className="font-semibold text-foreground text-lg">{site.name}</h3>
             {site.location && (
-              <div className="flex items-center gap-1 text-sm text-slate-400 mt-1">
+              <div className="flex items-center gap-1 text-sm text-muted-foreground mt-1">
                 <MapPin className="h-3.5 w-3.5 flex-shrink-0" />
                 <span className="truncate">{site.location}</span>
               </div>
@@ -254,10 +254,10 @@ function SiteCard({ site }: { site: SiteMetric }) {
           <div className="flex items-center gap-2 mb-6 text-sm">
             <Radio
               className={`h-3 w-3 ${
-                site.online ? "text-emerald-500 fill-emerald-500" : "text-slate-500 fill-slate-500"
+                site.online ? "text-emerald-500 fill-emerald-500" : "text-muted-foreground fill-slate-500"
               }`}
             />
-            <span className={site.online ? "text-emerald-400 font-medium" : "text-slate-400"}>
+            <span className={site.online ? "text-emerald-400 font-medium" : "text-muted-foreground"}>
               {site.online ? "Live" : "Offline"}
             </span>
           </div>
@@ -265,25 +265,25 @@ function SiteCard({ site }: { site: SiteMetric }) {
           {/* Metrics Grid */}
           <div className="grid grid-cols-2 gap-3 mb-6">
             {/* Wash Today */}
-            <div className="bg-slate-700 rounded-lg p-4 border border-slate-600">
+            <div className="bg-muted rounded-lg p-4 border border-border">
               <div className="flex items-center gap-2 mb-2">
                 <Gauge className="h-4 w-4 text-cyan-400" />
-                <span className="text-[11px] font-semibold text-slate-300 uppercase tracking-wide">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
                   {site.is_new_today ? "Since Setup" : "Today"}
                 </span>
               </div>
-              <div className="text-2xl font-bold text-white">{site.wash_today}</div>
-              <div className="text-xs text-slate-400 mt-1">washes</div>
+              <div className="text-2xl font-bold text-foreground">{site.wash_today}</div>
+              <div className="text-xs text-muted-foreground mt-1">washes</div>
             </div>
 
             {/* Lifetime */}
-            <div className="bg-slate-700 rounded-lg p-4 border border-slate-600">
+            <div className="bg-muted rounded-lg p-4 border border-border">
               <div className="flex items-center gap-2 mb-2">
                 <TrendingUp className="h-4 w-4 text-cyan-400" />
-                <span className="text-[11px] font-semibold text-slate-300 uppercase tracking-wide">Total</span>
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Total</span>
               </div>
-              <div className="text-2xl font-bold text-white">{(site.wash_total / 1000).toFixed(1)}k</div>
-              <div className="text-xs text-slate-400 mt-1">lifetime</div>
+              <div className="text-2xl font-bold text-foreground">{(site.wash_total / 1000).toFixed(1)}k</div>
+              <div className="text-xs text-muted-foreground mt-1">lifetime</div>
             </div>
 
             {/* Fresh Water */}
@@ -291,7 +291,7 @@ function SiteCard({ site }: { site: SiteMetric }) {
               className={`rounded-lg p-4 border ${
                 site.fresh_water_alert
                   ? "bg-red-950/40 border-red-500/60"
-                  : "bg-slate-700 border-slate-600"
+                  : "bg-muted border-border"
               }`}
             >
               <div className="flex items-center gap-2 mb-2">
@@ -302,13 +302,13 @@ function SiteCard({ site }: { site: SiteMetric }) {
                 )}
                 <span
                   className={`text-[11px] font-semibold uppercase tracking-wide ${
-                    site.fresh_water_alert ? "text-red-300" : "text-slate-300"
+                    site.fresh_water_alert ? "text-red-300" : "text-muted-foreground"
                   }`}
                 >
                   Fresh{site.fresh_water_alert ? " – High Usage" : ""}
                 </span>
               </div>
-              <div className={`text-2xl font-bold ${site.fresh_water_alert ? "text-red-300" : "text-white"}`}>
+              <div className={`text-2xl font-bold ${site.fresh_water_alert ? "text-red-300" : "text-foreground"}`}>
                 {site.fresh_today.toFixed(0)}
               </div>
               <div className={`text-xs mt-1 ${site.fresh_water_alert ? "text-red-300/80" : "text-cyan-400"}`}>
@@ -320,7 +320,7 @@ function SiteCard({ site }: { site: SiteMetric }) {
             <div
               className={`rounded-lg p-4 border ${
                 chemicalHealthy
-                  ? "bg-slate-700 border-slate-600"
+                  ? "bg-muted border-border"
                   : "bg-amber-900 border-amber-700"
               }`}
             >
@@ -330,9 +330,9 @@ function SiteCard({ site }: { site: SiteMetric }) {
                 ) : (
                   <AlertTriangle className="h-4 w-4 text-amber-400" />
                 )}
-                <span className="text-[11px] font-semibold text-slate-300 uppercase tracking-wide">Chem</span>
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Chem</span>
               </div>
-              <div className={`text-2xl font-bold ${chemicalHealthy ? "text-white" : "text-amber-100"}`}>
+              <div className={`text-2xl font-bold ${chemicalHealthy ? "text-foreground" : "text-amber-100"}`}>
                 {site.chemicals_total === 0 ? "—" : chemicalHealthy ? "✓" : site.chemicals_low}
               </div>
               <div className={`text-xs mt-1 ${chemicalHealthy ? "text-cyan-400" : "text-amber-400"}`}>
@@ -346,7 +346,7 @@ function SiteCard({ site }: { site: SiteMetric }) {
           </div>
 
           {/* View Details Link */}
-          <div className="flex items-center justify-between text-sm font-medium text-slate-400 group-hover:text-cyan-400 transition-colors pt-4 border-t border-slate-700">
+          <div className="flex items-center justify-between text-sm font-medium text-muted-foreground group-hover:text-cyan-400 transition-colors pt-4 border-t border-border">
             <span className="mt-4">View details</span>
             <span className="text-lg group-hover:translate-x-1 transition-transform mt-4">→</span>
           </div>

@@ -427,16 +427,16 @@ function SiteDetail() {
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 space-y-8">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 pb-6 border-b border-slate-200">
+      <div className="flex items-start justify-between gap-4 pb-6 border-b border-border">
         <div className="flex items-start gap-4">
           <Link to="/dashboard">
             <Button variant="ghost" size="icon" className="mt-1">
-              <ArrowLeft className="h-5 w-5 text-slate-600" />
+              <ArrowLeft className="h-5 w-5 text-muted-foreground" />
             </Button>
           </Link>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">{site.name}</h1>
-            {site.location && <p className="text-slate-600 mt-1">{site.location}</p>}
+            <h1 className="text-3xl font-bold tracking-tight text-foreground">{site.name}</h1>
+            {site.location && <p className="text-muted-foreground mt-1">{site.location}</p>}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -450,13 +450,13 @@ function SiteDetail() {
             Reports
           </Button>
           <div className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 flex-shrink-0 ${
-            isOnline ? "bg-emerald-50 text-emerald-700 border border-emerald-100" : "bg-slate-50 text-slate-600 border border-slate-200"
+            isOnline ? "bg-emerald-50 text-emerald-700 border border-emerald-100" : "bg-muted text-muted-foreground border border-border"
           }`}>
             <Radio
-              className={`h-3 w-3 ${isOnline ? "text-emerald-500 fill-emerald-500" : "text-slate-400 fill-slate-400"}`}
+              className={`h-3 w-3 ${isOnline ? "text-emerald-500 fill-emerald-500" : "text-muted-foreground fill-slate-400"}`}
             />
             <span>{isOnline ? "Live" : "Offline"}</span>
-            <span className="text-slate-400">•</span>
+            <span className="text-muted-foreground">•</span>
             <span className="text-xs">{agoLabel}</span>
           </div>
         </div>
@@ -464,22 +464,22 @@ function SiteDetail() {
 
       {/* Metrics Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
+        <div className="bg-muted rounded-lg p-6 border border-border">
           <div className="flex items-center gap-2 mb-2">
-            <Gauge className="h-5 w-5 text-slate-600" />
-            <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Today</span>
+            <Gauge className="h-5 w-5 text-muted-foreground" />
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Today</span>
           </div>
-          <div className="text-3xl font-bold text-slate-900">{stats.washToday}</div>
-          <div className="text-sm text-slate-500 mt-2">washes</div>
+          <div className="text-3xl font-bold text-foreground">{stats.washToday}</div>
+          <div className="text-sm text-muted-foreground mt-2">washes</div>
         </div>
 
-        <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
+        <div className="bg-muted rounded-lg p-6 border border-border">
           <div className="flex items-center gap-2 mb-2">
-            <Activity className="h-5 w-5 text-slate-600" />
-            <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Lifetime</span>
+            <Activity className="h-5 w-5 text-muted-foreground" />
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Lifetime</span>
           </div>
-          <div className="text-3xl font-bold text-slate-900">{(stats.washLifetime / 1000).toFixed(1)}k</div>
-          <div className="text-sm text-slate-500 mt-2">total washes</div>
+          <div className="text-3xl font-bold text-foreground">{(stats.washLifetime / 1000).toFixed(1)}k</div>
+          <div className="text-sm text-muted-foreground mt-2">total washes</div>
         </div>
 
         <div
@@ -487,7 +487,7 @@ function SiteDetail() {
             site?.fresh_water_daily_threshold_liters != null &&
             stats.freshToday > Number(site.fresh_water_daily_threshold_liters)
               ? "bg-red-50 border-red-300"
-              : "bg-blue-50 border-blue-200"
+              : "bg-primary/10 border-primary/20"
           }`}
         >
           <div className="flex items-center gap-2 mb-2">
@@ -495,14 +495,14 @@ function SiteDetail() {
             stats.freshToday > Number(site.fresh_water_daily_threshold_liters) ? (
               <AlertTriangle className="h-5 w-5 text-red-600" />
             ) : (
-              <Droplets className="h-5 w-5 text-blue-600" />
+              <Droplets className="h-5 w-5 text-primary" />
             )}
             <span
               className={`text-xs font-semibold uppercase tracking-wide ${
                 site?.fresh_water_daily_threshold_liters != null &&
                 stats.freshToday > Number(site.fresh_water_daily_threshold_liters)
                   ? "text-red-700"
-                  : "text-slate-600"
+                  : "text-muted-foreground"
               }`}
             >
               Water Today
@@ -516,7 +516,7 @@ function SiteDetail() {
               site?.fresh_water_daily_threshold_liters != null &&
               stats.freshToday > Number(site.fresh_water_daily_threshold_liters)
                 ? "text-red-700"
-                : "text-blue-900"
+                : "text-primary"
             }`}
           >
             {stats.freshToday.toFixed(0)}
@@ -526,7 +526,7 @@ function SiteDetail() {
               site?.fresh_water_daily_threshold_liters != null &&
               stats.freshToday > Number(site.fresh_water_daily_threshold_liters)
                 ? "text-red-600"
-                : "text-blue-600"
+                : "text-primary"
             }`}
           >
             liters
@@ -535,22 +535,22 @@ function SiteDetail() {
           </div>
         </div>
 
-        <div className="bg-blue-50 rounded-lg p-6 border border-blue-200">
+        <div className="bg-primary/10 rounded-lg p-6 border border-primary/20">
           <div className="flex items-center gap-2 mb-2">
-            <Droplets className="h-5 w-5 text-blue-600" />
-            <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Water Total</span>
+            <Droplets className="h-5 w-5 text-primary" />
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Water Total</span>
           </div>
-          <div className="text-3xl font-bold text-blue-900">{(stats.freshLifetime / 1000).toFixed(1)}k</div>
-          <div className="text-sm text-blue-600 mt-2">liters</div>
+          <div className="text-3xl font-bold text-primary">{(stats.freshLifetime / 1000).toFixed(1)}k</div>
+          <div className="text-sm text-primary mt-2">liters</div>
         </div>
       </div>
 
       {/* Wash Trend Chart */}
       {washTrendData.length > 0 && (
-        <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6">
-          <h2 className="text-xl font-semibold text-slate-900 mb-6 flex items-center gap-2">
-            <TrendingUp className="h-5 w-5 text-slate-600" />
-            7-Day Wash Trend <span className="text-sm font-normal text-slate-500">(daily washes)</span>
+        <div className="bg-card rounded-lg border border-border shadow-sm p-6">
+          <h2 className="text-xl font-semibold text-foreground mb-6 flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-muted-foreground" />
+            7-Day Wash Trend <span className="text-sm font-normal text-muted-foreground">(daily washes)</span>
           </h2>
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={washTrendData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
@@ -590,10 +590,10 @@ function SiteDetail() {
       )}
 
       {waterTrendData.length > 0 && (
-        <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6">
-          <h2 className="text-xl font-semibold text-slate-900 mb-6 flex items-center gap-2">
-            <Droplets className="h-5 w-5 text-blue-600" />
-            7-Day Fresh Water Trend <span className="text-sm font-normal text-slate-500">(daily liters)</span>
+        <div className="bg-card rounded-lg border border-border shadow-sm p-6">
+          <h2 className="text-xl font-semibold text-foreground mb-6 flex items-center gap-2">
+            <Droplets className="h-5 w-5 text-primary" />
+            7-Day Fresh Water Trend <span className="text-sm font-normal text-muted-foreground">(daily liters)</span>
           </h2>
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={waterTrendData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
