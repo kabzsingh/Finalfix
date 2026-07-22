@@ -397,6 +397,14 @@ function SiteDetail() {
   const washMeters = meters.filter((m) => m.meter_type === "wash");
   const freshMeters = meters.filter((m) => m.meter_type === "fresh_water");
 
+  // Average water used per car = today's Rinse Water Meter usage ÷ today's
+  // wash count. Specifically uses the Rinse meter (not the combined total
+  // of every fresh_water meter, e.g. Recycle Top Up), since that's the
+  // meter that actually measures water going onto each car.
+  const rinseMeter = freshMeters.find((m) => m.name.toLowerCase().includes("rinse")) ?? freshMeters[0];
+  const rinseToday = rinseMeter ? (todays[rinseMeter.id] ?? 0) : 0;
+  const avgWaterPerCar = rinseMeter && stats.washToday > 0 ? rinseToday / stats.washToday : null;
+
   const chemicalGroups = useMemo(() => {
     const groups = new Map<string, { label: string; level?: Meter; flow?: Meter }>();
     const push = (key: string, label: string, m: Meter) => {
@@ -463,7 +471,7 @@ function SiteDetail() {
       </div>
 
       {/* Metrics Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <div className="bg-muted rounded-lg p-6 border border-border">
           <div className="flex items-center gap-2 mb-2">
             <Gauge className="h-5 w-5 text-muted-foreground" />
@@ -542,6 +550,19 @@ function SiteDetail() {
           </div>
           <div className="text-3xl font-bold text-primary">{(stats.freshLifetime / 1000).toFixed(1)}k</div>
           <div className="text-sm text-primary mt-2">liters</div>
+        </div>
+
+        <div className="bg-muted rounded-lg p-6 border border-border">
+          <div className="flex items-center gap-2 mb-2">
+            <Droplets className="h-5 w-5 text-muted-foreground" />
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Avg Water / Car</span>
+          </div>
+          <div className="text-3xl font-bold text-foreground">
+            {avgWaterPerCar !== null ? avgWaterPerCar.toFixed(1) : "—"}
+          </div>
+          <div className="text-sm text-muted-foreground mt-2">
+            {rinseMeter ? `L per wash (${rinseMeter.name})` : "no rinse meter configured"}
+          </div>
         </div>
       </div>
 
