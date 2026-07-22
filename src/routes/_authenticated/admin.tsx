@@ -281,6 +281,24 @@ scripts/setup-admin.sql`}
     return true;
   };
 
+  const updateSiteDetails = async (siteId: string, details: { name: string; location: string | null }): Promise<boolean> => {
+    if (!details.name.trim()) {
+      toast.error("Site name is required");
+      return false;
+    }
+    const { error } = await supabase
+      .from("sites")
+      .update({ name: details.name.trim(), location: details.location?.trim() || null })
+      .eq("id", siteId);
+    if (error) {
+      toast.error(error.message);
+      return false;
+    }
+    load();
+    toast.success("Site details updated");
+    return true;
+  };
+
   const generateKey = useServerFn(createSiteApiKey);
   const handleGenKey = async (siteId: string) => {
     try {
@@ -361,6 +379,7 @@ scripts/setup-admin.sql`}
               onRevokeKey={revokeKey}
               onGenerateSketch={() => setSketchSite(site)}
               onUpdateBranding={(branding) => updateBranding(site.id, branding)}
+              onUpdateSiteDetails={(details) => updateSiteDetails(site.id, details)}
             />
           ))}
 
@@ -737,7 +756,7 @@ function MeterRow({
 }
 
 function SiteAdminCard({
-  site, meters, keys, onRemoveSite, onAddMeter, onUpdateMeter, onRemoveMeter, onGenerateKey, onRevokeKey, onGenerateSketch, onUpdateBranding,
+  site, meters, keys, onRemoveSite, onAddMeter, onUpdateMeter, onRemoveMeter, onGenerateKey, onRevokeKey, onGenerateSketch, onUpdateBranding, onUpdateSiteDetails,
 }: {
   site: Site; meters: Meter[]; keys: ApiKeyRow[];
   onRemoveSite: () => void;
@@ -748,6 +767,7 @@ function SiteAdminCard({
   onRevokeKey: (id: string) => void;
   onGenerateSketch: () => void;
   onUpdateBranding: (branding: { primary_color: string; secondary_color: string; accent_color: string; logo_url: string | null; background_url: string | null }) => Promise<boolean>;
+  onUpdateSiteDetails: (details: { name: string; location: string | null }) => Promise<boolean>;
 }) {
   const [type, setType] = useState<Meter["meter_type"]>("chemical");
   const [name, setName] = useState("");
@@ -756,30 +776,81 @@ function SiteAdminCard({
   const [capacity, setCapacity] = useState("");
   const [low, setLow] = useState("");
   const [group, setGroup] = useState("");
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [editName, setEditName] = useState(site.name);
+  const [editLocation, setEditLocation] = useState(site.location ?? "");
+  const [savingDetails, setSavingDetails] = useState(false);
+
+  const saveSiteDetails = async () => {
+    setSavingDetails(true);
+    const ok = await onUpdateSiteDetails({ name: editName, location: editLocation || null });
+    setSavingDetails(false);
+    if (ok) setEditingDetails(false);
+  };
+
+  const cancelEditDetails = () => {
+    setEditName(site.name);
+    setEditLocation(site.location ?? "");
+    setEditingDetails(false);
+  };
   // No branding customization - original simple setup
 
   return (
     <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden transition-all hover:shadow-md">
       <div className="bg-muted/30 px-6 py-4 flex items-center justify-between border-b border-border">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded bg-background border border-border flex items-center justify-center font-bold text-primary">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="h-10 w-10 rounded bg-background border border-border flex items-center justify-center font-bold text-primary shrink-0">
             {site.name.charAt(0)}
           </div>
-          <div>
-            <h3 className="font-bold text-lg leading-tight">{site.name}</h3>
-            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mt-0.5 uppercase tracking-wider font-medium">
-              <Cpu className="h-3 w-3" />
-              {site.location || "Remote Site"}
-              <span className="mx-1 opacity-30">•</span>
-              {meters.length} Sensor{meters.length === 1 ? "" : "s"}
+          {editingDetails ? (
+            <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <Input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="Site name"
+                className="h-8 text-sm font-semibold"
+              />
+              <Input
+                value={editLocation}
+                onChange={(e) => setEditLocation(e.target.value)}
+                placeholder="Location / Address"
+                className="h-8 text-sm"
+              />
             </div>
-          </div>
+          ) : (
+            <div className="min-w-0">
+              <h3 className="font-bold text-lg leading-tight truncate">{site.name}</h3>
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mt-0.5 uppercase tracking-wider font-medium">
+                <Cpu className="h-3 w-3" />
+                {site.location || "Remote Site"}
+                <span className="mx-1 opacity-30">•</span>
+                {meters.length} Sensor{meters.length === 1 ? "" : "s"}
+              </div>
+            </div>
+          )}
         </div>
-        <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={onGenerateSketch} disabled={meters.length === 0} className="h-8 text-xs font-semibold">
-            <Cpu className="h-3.5 w-3.5 mr-1.5" /> Sketch
-          </Button>
-          <Button variant="ghost" size="icon" onClick={onRemoveSite} className="h-8 w-8 text-destructive hover:bg-destructive/10"><Trash2 className="h-4 w-4" /></Button>
+        <div className="flex items-center gap-2 shrink-0">
+          {editingDetails ? (
+            <>
+              <Button type="button" size="sm" onClick={saveSiteDetails} disabled={savingDetails} className="h-8 text-xs font-semibold">
+                {savingDetails ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
+                Save
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={cancelEditDetails} className="h-8 text-xs">
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button type="button" variant="outline" size="icon" onClick={() => setEditingDetails(true)} className="h-8 w-8" title="Edit site details">
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={onGenerateSketch} disabled={meters.length === 0} className="h-8 text-xs font-semibold">
+                <Cpu className="h-3.5 w-3.5 mr-1.5" /> Sketch
+              </Button>
+              <Button variant="ghost" size="icon" onClick={onRemoveSite} className="h-8 w-8 text-destructive hover:bg-destructive/10"><Trash2 className="h-4 w-4" /></Button>
+            </>
+          )}
         </div>
       </div>
 
