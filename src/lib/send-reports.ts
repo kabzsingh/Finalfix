@@ -63,26 +63,16 @@ function escapeCsv(v: any) {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-async function fetchReadings(db: Client, siteId: string, fromIso: string, toIso: string) {
-  const all: any[] = [];
-  let from = 0;
-  const PAGE = 1000;
-  while (true) {
-    const { data, error } = await db
-      .from("readings")
-      .select("meter_id,value,recorded_at")
-      .eq("site_id", siteId)
-      .gte("recorded_at", fromIso)
-      .lt("recorded_at", toIso)
-      .order("recorded_at", { ascending: true })
-      .range(from, from + PAGE - 1);
-    if (error) throw new Error(error.message);
-    if (!data?.length) break;
-    all.push(...data);
-    if (data.length < PAGE) break;
-    from += PAGE;
-  }
-  return all;
+async function fetchHourlyAgg(db: Client, siteId: string, fromIso: string, toIso: string) {
+  const { data, error } = await db.rpc("report_hourly_agg", { _site_id: siteId, _from: fromIso, _to: toIso });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as { meter_id: string; hour_bucket: number; sum_value: number; count_value: number; last_value: number }[];
+}
+
+async function fetchDailyAgg(db: Client, siteId: string, fromIso: string, toIso: string, tz: string) {
+  const { data, error } = await db.rpc("report_daily_agg", { _site_id: siteId, _from: fromIso, _to: toIso, _tz: tz });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as { meter_id: string; day_bucket: string; sum_value: number; count_value: number; last_value: number }[];
 }
 
 async function buildDailyReport(db: Client, site: any, meters: any[]) {
@@ -94,16 +84,12 @@ async function buildDailyReport(db: Client, site: any, meters: any[]) {
   const endLocal = new Date(`${ymd}T23:59:59.999`);
   const fromIso = new Date(startLocal.toISOString()).toISOString();
   const toIso = new Date(endLocal.getTime() + 1).toISOString();
-  const readings = await fetchReadings(db, site.id, fromIso, toIso);
-  const buckets = new Map<string, Map<string, number[]>>();
-  for (const r of readings) {
-    const d = new Date(r.recorded_at);
-    const hourKey = `${String(d.getUTCHours()).padStart(2, "0")}:00`;
+  const readingsAgg = await fetchHourlyAgg(db, site.id, fromIso, toIso);
+  const buckets = new Map<string, Map<string, { sum: number; count: number; last: number }>>();
+  for (const row of readingsAgg) {
+    const hourKey = `${String(row.hour_bucket).padStart(2, "0")}:00`;
     if (!buckets.has(hourKey)) buckets.set(hourKey, new Map());
-    const inner = buckets.get(hourKey)!;
-    const arr = inner.get(r.meter_id) ?? [];
-    arr.push(Number(r.value));
-    inner.set(r.meter_id, arr);
+    buckets.get(hourKey)!.set(row.meter_id, { sum: Number(row.sum_value), count: Number(row.count_value), last: Number(row.last_value) });
   }
   const hours = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, "0")}:00`);
   const header = ["hour", ...meters.map((m) => `${m.name} (${m.unit || m.meter_type})`)];
@@ -111,10 +97,10 @@ async function buildDailyReport(db: Client, site: any, meters: any[]) {
   for (const h of hours) {
     const row: any[] = [h];
     for (const meter of meters) {
-      const vals = buckets.get(h)?.get(meter.id) ?? [];
-      if (meter.meter_type === "wash") row.push(vals.length);
-      else if (meter.meter_type === "fresh_water") row.push(vals.reduce((a, b) => a + b, 0).toFixed(2));
-      else row.push(vals.length ? vals[vals.length - 1].toFixed(2) : "");
+      const agg = buckets.get(h)?.get(meter.id);
+      if (meter.meter_type === "wash") row.push(agg?.count ?? 0);
+      else if (meter.meter_type === "fresh_water") row.push((agg?.sum ?? 0).toFixed(2));
+      else row.push(agg ? agg.last.toFixed(2) : "");
     }
     lines.push(row.map(escapeCsv).join(","));
   }
@@ -138,17 +124,14 @@ async function buildMonthlyReport(db: Client, site: any, meters: any[]) {
   const ym = `${prevYear}-${String(prevMonth).padStart(2, "0")}`;
   const fromIso = new Date(`${ym}-01T00:00:00`).toISOString();
   const toIso = new Date(prevYear, prevMonth, 1).toISOString();
-  const readings = await fetchReadings(db, site.id, fromIso, toIso);
+  const readingsAgg = await fetchDailyAgg(db, site.id, fromIso, toIso, tz);
   const days = new Set<string>();
-  const map = new Map<string, Map<string, number[]>>();
-  for (const r of readings) {
-    const d = ymdInTz(tz, new Date(r.recorded_at));
+  const map = new Map<string, Map<string, { sum: number; count: number; last: number }>>();
+  for (const row of readingsAgg) {
+    const d = row.day_bucket;
     days.add(d);
     if (!map.has(d)) map.set(d, new Map());
-    const inner = map.get(d)!;
-    const arr = inner.get(r.meter_id) ?? [];
-    arr.push(Number(r.value));
-    inner.set(r.meter_id, arr);
+    map.get(d)!.set(row.meter_id, { sum: Number(row.sum_value), count: Number(row.count_value), last: Number(row.last_value) });
   }
   const sortedDays = Array.from(days).sort();
   const header = ["date", ...meters.map((m) => `${m.name} (${m.unit || m.meter_type})`)];
@@ -156,10 +139,10 @@ async function buildMonthlyReport(db: Client, site: any, meters: any[]) {
   for (const d of sortedDays) {
     const row: any[] = [d];
     for (const meter of meters) {
-      const vals = map.get(d)?.get(meter.id) ?? [];
-      if (meter.meter_type === "wash") row.push(vals.length);
-      else if (meter.meter_type === "fresh_water") row.push(vals.reduce((a, b) => a + b, 0).toFixed(2));
-      else row.push(vals.length ? vals[vals.length - 1].toFixed(2) : "");
+      const agg = map.get(d)?.get(meter.id);
+      if (meter.meter_type === "wash") row.push(agg?.count ?? 0);
+      else if (meter.meter_type === "fresh_water") row.push((agg?.sum ?? 0).toFixed(2));
+      else row.push(agg ? agg.last.toFixed(2) : "");
     }
     lines.push(row.map(escapeCsv).join(","));
   }
@@ -171,6 +154,40 @@ async function buildMonthlyReport(db: Client, site: any, meters: any[]) {
     periodKey: ym,
     attachment: { filename: `${safeName}_monthly_${ym}.csv`, mime: "text/csv", content: csv },
   };
+}
+
+async function alreadySent(db: Client, siteId: string, type: "daily" | "monthly", periodKey: string) {
+  const { data, error } = await db
+    .from("report_send_log")
+    .select("id")
+    .eq("site_id", siteId)
+    .eq("report_type", type)
+    .eq("period_key", periodKey)
+    .eq("status", "sent")
+    .limit(1);
+  if (error) throw new Error(error.message);
+  return (data?.length ?? 0) > 0;
+}
+
+async function logReportAttempt(
+  db: Client,
+  siteId: string,
+  type: "daily" | "monthly",
+  periodKey: string,
+  recipients: string[],
+  ok: boolean,
+  errorMsg?: string,
+) {
+  // Best-effort logging: if this fails, don't let it mask the real
+  // send result — it's already been reported back to the caller.
+  await db.from("report_send_log").insert({
+    site_id: siteId,
+    report_type: type,
+    period_key: periodKey,
+    recipients,
+    status: ok ? "sent" : "failed",
+    error: errorMsg ?? null,
+  });
 }
 
 async function processSite(db: Client, site: any, sendgridApiKey: string) {
@@ -186,30 +203,32 @@ async function processSite(db: Client, site: any, sendgridApiKey: string) {
   const fromName = "Autowash Dashboard Reports";
   if (site.daily_report_enabled) {
     const r = await buildDailyReport(db, site, meters ?? []);
-    const { error: dupErr } = await db.from("report_send_log").insert({ site_id: site.id, report_type: "daily", period_key: r.periodKey, recipients });
-    if (!dupErr) {
+    if (await alreadySent(db, site.id, "daily", r.periodKey)) {
+      results.push({ type: "daily", period: r.periodKey, skipped: "already-sent" });
+    } else {
       try {
         await sendEmail(recipients, r.subject, r.text, r.attachment, sendgridApiKey, fromEmail, fromName);
+        await logReportAttempt(db, site.id, "daily", r.periodKey, recipients, true);
         results.push({ type: "daily", period: r.periodKey, ok: true });
       } catch (e: any) {
+        await logReportAttempt(db, site.id, "daily", r.periodKey, recipients, false, e.message);
         results.push({ type: "daily", period: r.periodKey, ok: false, error: e.message });
       }
-    } else {
-      results.push({ type: "daily", period: r.periodKey, skipped: "already-sent" });
     }
   }
   if (site.monthly_report_enabled && local.day === 1) {
     const r = await buildMonthlyReport(db, site, meters ?? []);
-    const { error: dupErr } = await db.from("report_send_log").insert({ site_id: site.id, report_type: "monthly", period_key: r.periodKey, recipients });
-    if (!dupErr) {
+    if (await alreadySent(db, site.id, "monthly", r.periodKey)) {
+      results.push({ type: "monthly", period: r.periodKey, skipped: "already-sent" });
+    } else {
       try {
         await sendEmail(recipients, r.subject, r.text, r.attachment, sendgridApiKey, fromEmail, fromName);
+        await logReportAttempt(db, site.id, "monthly", r.periodKey, recipients, true);
         results.push({ type: "monthly", period: r.periodKey, ok: true });
       } catch (e: any) {
+        await logReportAttempt(db, site.id, "monthly", r.periodKey, recipients, false, e.message);
         results.push({ type: "monthly", period: r.periodKey, ok: false, error: e.message });
       }
-    } else {
-      results.push({ type: "monthly", period: r.periodKey, skipped: "already-sent" });
     }
   }
   return { site: site.name, results };
