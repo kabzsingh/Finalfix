@@ -12,8 +12,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { createSiteApiKey, grantAdminBootstrap, seedDemoData, getSmtpSettings, updateSmtpSettings, listAllUsers, setUserRole, deleteUser } from "@/lib/admin.functions";
-import { Copy, Plus, Trash2, KeyRound, Sparkles, Cpu, Mail, Send, Server, ShieldCheck, Loader2, AlertTriangle, Users, UserCheck, UserX, Building2, Save, Pencil, Palette } from "lucide-react";
+import { createSiteApiKey, grantAdminBootstrap, getSmtpSettings, updateSmtpSettings, listAllUsers, setUserRole, deleteUser } from "@/lib/admin.functions";
+import { Copy, Plus, Trash2, KeyRound, Cpu, Mail, Send, Server, ShieldCheck, Loader2, AlertTriangle, Users, UserCheck, UserX, Building2, Save, Pencil, Palette } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { previewTheme } from "@/lib/theme-context";
 
@@ -45,7 +45,6 @@ function AdminPage() {
   const { isAdmin, refreshRoles, user, loading } = useAuth();
   const nav = useNavigate();
   const bootstrapServer = useServerFn(grantAdminBootstrap);
-  const seed = useServerFn(seedDemoData);
 
   const [sites, setSites] = useState<Site[]>([]);
   const [meters, setMeters] = useState<Meter[]>([]);
@@ -317,22 +316,11 @@ scripts/setup-admin.sql`}
   };
   return (
     <div className="max-w-6xl mx-auto space-y-8 pb-20 px-4">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border pb-6">
+      <div className="border-b border-border pb-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Admin Console</h1>
           <p className="text-muted-foreground mt-1 text-sm">Configure site infrastructure, monitor ESP32 connectivity, and manage reports.</p>
         </div>
-        <Button variant="secondary" size="sm" onClick={async () => {
-          const r = await seed();
-          if (r.seeded) {
-            toast.success("Demo environment initialized");
-            load();
-          } else {
-            toast.info("Database already contains data — seeding skipped");
-          }
-        }} className="gap-2 shrink-0">
-          <Sparkles className="h-4 w-4" /> Initialize Demo Sites
-        </Button>
       </div>
 
       <AppThemePanel />
