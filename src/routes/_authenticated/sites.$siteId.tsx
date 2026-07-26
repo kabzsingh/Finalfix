@@ -282,11 +282,24 @@ function SiteDetail() {
       setWashTrendData(trendData);
     }
 
-    const waterMeterForTrend = (m as any)?.find((x: Meter) => x.meter_type === "fresh_water");
-    if (waterMeterForTrend) {
-      const points = await Promise.all(dayCutoffs.map((c) => lastValueAtOrBefore(waterMeterForTrend.id, c)));
-      const trendData = dailyDeltas(points).map((d) => ({ time: d.time, liters: d.value }));
-      setWaterTrendData(trendData);
+    // A site can have multiple fresh_water meters (e.g. Rinse Water,
+    // Recycle Top-Up). Sum the daily delta across ALL of them, the same
+    // way the "Today"/"Lifetime" fresh water totals are summed elsewhere,
+    // instead of picking just one meter — otherwise the trend silently
+    // tracks whichever meter happened to come back first from the query.
+    const waterMetersForTrend = ((m as any) ?? []).filter((x: Meter) => x.meter_type === "fresh_water");
+    if (waterMetersForTrend.length > 0) {
+      const perMeterTrends = await Promise.all(
+        waterMetersForTrend.map(async (wm: Meter) => {
+          const points = await Promise.all(dayCutoffs.map((c) => lastValueAtOrBefore(wm.id, c)));
+          return dailyDeltas(points);
+        })
+      );
+      const combined = dayCutoffs.slice(1).map((c, i) => ({
+        time: c.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        liters: perMeterTrends.reduce((sum, trend) => sum + (trend[i]?.value ?? 0), 0),
+      }));
+      setWaterTrendData(combined);
     }
 
     // Fetch persisted chemical fill history (recorded server-side by handle_chemical_state_change)
