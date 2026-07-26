@@ -51,7 +51,9 @@ grant execute on function public.report_daily_agg(uuid, timestamptz, timestamptz
 -- error above) still permanently marked that day as "sent" and blocked
 -- all future retries. Add a partial unique index so only rows with
 -- status = 'sent' block future sends; failed attempts can be retried.
-drop index if exists report_send_log_site_id_report_type_period_key_key;
+-- Dropping the constraint first also removes its backing index; a
+-- separate "drop index" for the same object errors since the
+-- constraint still depends on it (2BP01: dependent objects).
 alter table public.report_send_log drop constraint if exists report_send_log_site_id_report_type_period_key_key;
 create unique index if not exists report_send_log_sent_unique
   on public.report_send_log (site_id, report_type, period_key)
