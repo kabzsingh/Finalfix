@@ -35,7 +35,7 @@ interface Site {
   accent_color?: string;
   fresh_water_daily_threshold_liters?: number | null;
 }
-interface Meter { id: string; site_id: string; meter_type: "wash"|"fresh_water"|"chemical"|"chemical_flow"; name: string; unit: string; capacity: number | null; low_threshold: number | null; device_key: string; position: number; chemical_group: string | null }
+interface Meter { id: string; site_id: string; meter_type: "wash"|"fresh_water"|"chemical"|"chemical_flow"; name: string; unit: string; capacity: number | null; low_threshold: number | null; device_key: string; position: number; chemical_group: string | null; modbus_address: number | null }
 interface ApiKeyRow { id: string; site_id: string; key_prefix: string; label: string | null; revoked: boolean; last_used_at: string | null; created_at: string }
 
 const SETUP_SQL_HINT =
@@ -222,6 +222,7 @@ scripts/setup-admin.sql`}
         low_threshold: m.low_threshold ?? null,
         device_key: deviceKey,
         chemical_group: m.chemical_group?.trim() || null,
+        modbus_address: m.modbus_address ?? null,
         position: meters.filter((x) => x.site_id === siteId).length,
       });
       if (error) {
@@ -237,10 +238,12 @@ scripts/setup-admin.sql`}
     }
   };
 
-  const updateMeter = async (id: string, updates: { capacity: number | null; low_threshold: number | null }): Promise<boolean> => {
+  const updateMeter = async (id: string, updates: { capacity: number | null; low_threshold: number | null; modbus_address?: number | null }): Promise<boolean> => {
     try {
+      const payload: any = { capacity: updates.capacity, low_threshold: updates.low_threshold };
+      if (updates.modbus_address !== undefined) payload.modbus_address = updates.modbus_address;
       const { error } = await supabase.from("site_meters")
-        .update({ capacity: updates.capacity, low_threshold: updates.low_threshold })
+        .update(payload)
         .eq("id", id);
       if (error) {
         toast.error(error.message);
@@ -652,12 +655,13 @@ function MeterRow({
   meter, onUpdateMeter, onRemoveMeter,
 }: {
   meter: Meter;
-  onUpdateMeter: (id: string, updates: { capacity: number | null; low_threshold: number | null }) => Promise<boolean>;
+  onUpdateMeter: (id: string, updates: { capacity: number | null; low_threshold: number | null; modbus_address?: number | null }) => Promise<boolean>;
   onRemoveMeter: (id: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [capacity, setCapacity] = useState(meter.capacity != null ? String(meter.capacity) : "");
   const [lowThreshold, setLowThreshold] = useState(meter.low_threshold != null ? String(meter.low_threshold) : "");
+  const [modbusAddress, setModbusAddress] = useState(meter.modbus_address != null ? String(meter.modbus_address) : "");
   const [saving, setSaving] = useState(false);
   const isChemical = meter.meter_type === "chemical" || meter.meter_type === "chemical_flow";
 
@@ -666,6 +670,7 @@ function MeterRow({
     const ok = await onUpdateMeter(meter.id, {
       capacity: capacity.trim() ? Number(capacity) : null,
       low_threshold: lowThreshold.trim() ? Number(lowThreshold) : null,
+      modbus_address: modbusAddress.trim() ? Number(modbusAddress) : null,
     });
     setSaving(false);
     if (ok) setEditing(false);
@@ -681,7 +686,7 @@ function MeterRow({
           </div>
           <div>
             <div className="text-sm font-semibold">{meter.name}</div>
-            <div className="flex items-center gap-2 mt-0.5">
+            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
               <span className="text-[10px] uppercase font-bold text-muted-foreground/70">{meter.meter_type.replace("_", " ")}</span>
               {meter.chemical_group && (
                 <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-500 font-bold border border-indigo-500/10">
@@ -694,43 +699,60 @@ function MeterRow({
               {!editing && meter.low_threshold != null && (
                 <span className="text-[10px] text-muted-foreground/60">Float trips at: {meter.low_threshold}{meter.unit} used</span>
               )}
+              {!editing && (
+                <span className={`text-[10px] font-mono ${meter.modbus_address != null ? "text-muted-foreground/60" : "text-amber-500"}`}>
+                  {meter.modbus_address != null ? `Modbus: ${meter.modbus_address}` : "Modbus: not set"}
+                </span>
+              )}
             </div>
           </div>
         </div>
         <div className="flex items-center gap-1">
-          {isChemical && (
-            <Button variant="ghost" size="icon" onClick={() => setEditing((v) => !v)} className="h-8 w-8 text-muted-foreground hover:text-primary">
-              <Pencil className="h-3.5 w-3.5" />
-            </Button>
-          )}
+          <Button variant="ghost" size="icon" onClick={() => setEditing((v) => !v)} className="h-8 w-8 text-muted-foreground hover:text-primary">
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
           <Button variant="ghost" size="icon" onClick={() => onRemoveMeter(meter.id)} className="h-8 w-8 text-muted-foreground hover:text-destructive">
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>
 
-      {editing && isChemical && (
+      {editing && (
         <div className="mt-3 pt-3 border-t border-border/60 grid grid-cols-2 gap-3 items-end">
           <div className="space-y-1">
-            <Label className="text-[10px]">Total drum capacity ({meter.unit || "L"})</Label>
+            <Label className="text-[10px]">HMI Modbus Address (mapping table)</Label>
             <Input
               className="h-8 text-xs"
               type="number"
-              placeholder="e.g. 210"
-              value={capacity}
-              onChange={(e) => setCapacity(e.target.value)}
+              placeholder="e.g. 3025"
+              value={modbusAddress}
+              onChange={(e) => setModbusAddress(e.target.value)}
             />
           </div>
-          <div className="space-y-1">
-            <Label className="text-[10px]">Float trips after ({meter.unit || "L"} used from full)</Label>
-            <Input
-              className="h-8 text-xs"
-              type="number"
-              placeholder="e.g. 50"
-              value={lowThreshold}
-              onChange={(e) => setLowThreshold(e.target.value)}
-            />
-          </div>
+          {isChemical && (
+            <>
+              <div className="space-y-1">
+                <Label className="text-[10px]">Total drum capacity ({meter.unit || "L"})</Label>
+                <Input
+                  className="h-8 text-xs"
+                  type="number"
+                  placeholder="e.g. 210"
+                  value={capacity}
+                  onChange={(e) => setCapacity(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px]">Float trips after ({meter.unit || "L"} used from full)</Label>
+                <Input
+                  className="h-8 text-xs"
+                  type="number"
+                  placeholder="e.g. 50"
+                  value={lowThreshold}
+                  onChange={(e) => setLowThreshold(e.target.value)}
+                />
+              </div>
+            </>
+          )}
           <div className="col-span-2 flex justify-end gap-2">
             <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setEditing(false)}>Cancel</Button>
             <Button size="sm" className="h-8 text-xs" onClick={handleSave} disabled={saving}>
@@ -749,7 +771,7 @@ function SiteAdminCard({
   site: Site; meters: Meter[]; keys: ApiKeyRow[];
   onRemoveSite: () => void;
   onAddMeter: (m: Partial<Meter>) => Promise<boolean>;
-  onUpdateMeter: (id: string, updates: { capacity: number | null; low_threshold: number | null }) => Promise<boolean>;
+  onUpdateMeter: (id: string, updates: { capacity: number | null; low_threshold: number | null; modbus_address?: number | null }) => Promise<boolean>;
   onRemoveMeter: (id: string) => void;
   onGenerateKey: () => void;
   onRevokeKey: (id: string) => void;
@@ -761,6 +783,7 @@ function SiteAdminCard({
   const [name, setName] = useState("");
   const [unit, setUnit] = useState("L");
   const [deviceKey, setDeviceKey] = useState("");
+  const [modbusAddress, setModbusAddress] = useState("");
   const [capacity, setCapacity] = useState("");
   const [low, setLow] = useState("");
   const [group, setGroup] = useState("");
@@ -862,7 +885,7 @@ function SiteAdminCard({
 
           <div className="mt-6 rounded-lg bg-muted/20 p-4 border border-border/40">
             <p className="text-[10px] font-bold uppercase text-muted-foreground mb-3 tracking-widest">Connect New Meter</p>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
               <div className="space-y-1">
                 <Label className="text-[10px]">Type</Label>
                 <Select value={type} onValueChange={(v) => setType(v as any)}>
@@ -882,6 +905,10 @@ function SiteAdminCard({
               <div className="space-y-1">
                 <Label className="text-[10px]">Device Key</Label>
                 <Input className="h-8 text-xs" placeholder="esp_id" value={deviceKey} onChange={(e) => setDeviceKey(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ""))} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px]">HMI Modbus Addr</Label>
+                <Input className="h-8 text-xs" placeholder="e.g. 3025" type="number" value={modbusAddress} onChange={(e) => setModbusAddress(e.target.value)} />
               </div>
               <div className="space-y-1">
                 <Label className="text-[10px]">Unit</Label>
@@ -913,12 +940,13 @@ function SiteAdminCard({
                     name: name.trim(),
                     unit,
                     device_key: deviceKey.trim(),
+                    modbus_address: modbusAddress.trim() ? Number(modbusAddress) : null,
                     capacity: capacity ? Number(capacity) : null,
                     low_threshold: low ? Number(low) : null,
                     chemical_group: group.trim() || null,
                   });
                   if (!ok) return;
-                  setName(""); setDeviceKey(""); setCapacity(""); setLow(""); setGroup("");
+                  setName(""); setDeviceKey(""); setModbusAddress(""); setCapacity(""); setLow(""); setGroup("");
                 }}
               ><Plus className="h-3.5 w-3.5 mr-1" /> Add Sensor</Button>
             </div>
@@ -1132,290 +1160,452 @@ function ReportSettings({ site, onSaved }: { site: Site; onSaved: () => void }) 
 
 function buildEsp32Sketch(site: Site, meters: Meter[]) {
   const endpoint = `${typeof window !== "undefined" ? window.location.origin : "https://your-deployment-url.com"}/api/public/ingest`;
-  
-  // Hardcoded Modbus register mapping for Delta HMI
-  // Adjust these based on your actual HMI configuration
-  const modbusMap: Record<string, number> = {
-    "wash_count": 3025,
-    "rinse_meter": 3027,
-    "recycle_topup": 3029,
-    "multi_clean_chem": 3031,
-    "autowash_chem": 3033,
-    "peach_wax_chem": 3035,
-  };
-  
-  // Create meter to register mapping
-  const meterToRegister = new Map<string, number>();
-  for (const m of meters) {
-    // Map meter device_key to register address if available
-    // For now use a simple mapping - you can customize this per site
-    if (m.meter_type === "wash") meterToRegister.set(m.device_key, modbusMap.wash_count);
-    else if (m.meter_type === "fresh_water" && m.name.toLowerCase().includes("rinse")) meterToRegister.set(m.device_key, modbusMap.rinse_meter);
-    else if (m.meter_type === "fresh_water" && m.name.toLowerCase().includes("recycle")) meterToRegister.set(m.device_key, modbusMap.recycle_topup);
-    else if (m.meter_type === "chemical" && m.name.toLowerCase().includes("multi")) meterToRegister.set(m.device_key, modbusMap.multi_clean_chem);
-    else if (m.meter_type === "chemical" && m.name.toLowerCase().includes("autowash")) meterToRegister.set(m.device_key, modbusMap.autowash_chem);
-    else if (m.meter_type === "chemical" && m.name.toLowerCase().includes("wax")) meterToRegister.set(m.device_key, modbusMap.peach_wax_chem);
+
+  // Only meters with an HMI Modbus Address configured (in Admin > Meter &
+  // Sensor Configuration) can be included in the generated sketch — that
+  // address is what tells the ESP32 where to read this meter's value from.
+  const configured = meters.filter((m) => m.modbus_address != null);
+  const missing = meters.filter((m) => m.modbus_address == null);
+
+  const meterEntries = configured.length > 0
+    ? configured
+        .map((m) => {
+          const zeroBased = (m.modbus_address as number) - 1;
+          const safeName = m.name.replace(/"/g, '\\"');
+          const safeKey = m.device_key.replace(/"/g, '\\"');
+          return `  { ${zeroBased}, "${safeKey}", "${safeName}" },  // mapping table ${m.modbus_address}`;
+        })
+        .join("\n")
+    : "  // No meters have a Modbus Address configured yet — add one for each meter in Admin first.";
+
+  const mappingComment = configured.length > 0
+    ? configured
+        .map((m) => {
+          const addr = m.modbus_address as number;
+          return `//   Modbus Addr ${addr}-${addr + 1}  ->  ${m.name}  (DWORD)  [device_key ${m.device_key}]`;
+        })
+        .join("\n")
+    : "//   (no meters configured yet)";
+
+  const missingComment = missing.length > 0
+    ? "//\n// ⚠ The following meters have NO Modbus Address set in Admin yet, so they\n// are NOT included below. Set each one's HMI Modbus Address in Admin > this\n// site > Meter & Sensor Configuration, then regenerate this sketch:\n" +
+      missing.map((m) => `//   - ${m.name} (device_key ${m.device_key})`).join("\n") + "\n"
+    : "";
+
+  const sketch = `// Auto-generated for site: ${site.name}
+// "Bulletproof" version — hardened for unattended field operation.
+//
+// Reads ${configured.length} meter value(s) from the Delta HMI/PLC over Modbus TCP
+// (the HMI acts as a Modbus TCP Server on port 502, exposing PLC
+// D-registers via the Modbus TCP Mapping Table configured in DOPSoft),
+// then POSTs them over HTTPS to the wash dashboard ingest API.
+//
+// === MODBUS MAPPING (from DOPSoft Modbus TCP Mapping Table) ===
+${mappingComment}
+${missingComment}
+// IMPORTANT: word order (high/low) for 32-bit values is uncertain.
+// This tries LOW-word-first (register N = low 16 bits, N+1 = high 16
+// bits), Delta's typical default. If a reading looks wildly wrong vs
+// the HMI screen, swap combineWords() to: ((uint32_t)lo << 16) | hi;
+//
+// NOTE ON MODBUS ADDRESSING: mapping table addresses are 1-based
+// (e.g. 3025). The wire protocol is 0-based, so 3025 in the table
+// means we request address 3024. This -1 offset is already applied.
+//
+// === HARDENING NOTES (what makes this "bulletproof") ===
+//  1. HTTPS actually works: HTTPClient on ESP32 needs an explicit
+//     WiFiClientSecure attached via http.begin(client, url) for
+//     https:// URLs to connect reliably. setInsecure() skips cert
+//     validation (fine for this use case; the endpoint isn't handling
+//     anything more sensitive than meter counts and an API key header).
+//  2. Modbus reads retry up to MODBUS_MAX_RETRIES times before a
+//     meter is marked failed for this cycle.
+//  3. A hardware watchdog reboots the device if the main loop ever
+//     stalls (bad socket state, driver lockup, etc.) for more than
+//     WDT_TIMEOUT_S seconds.
+//  4. WiFi reconnect uses backoff instead of hammering reconnect in
+//     a tight loop when WiFi is down for an extended period.
+//  5. The Modbus TCP socket is proactively closed/reopened every
+//     SOCKET_REFRESH_CYCLES polls, since some Delta HMIs silently
+//     let long-held sockets go stale without sending a FIN/RST.
+//  6. Offline queue (SPIFFS) still buffers readings if the network
+//     or API is down, and is capped at MAX_FILE_LINES.
+//
+// ============================================================
+// TODO BEFORE FLASHING — fill in the values below from the dashboard:
+//   1. WIFI_SSID / WIFI_PASS   -> WiFi credentials for this site
+//   2. SITE_API_KEY            -> "ws_live_..." key for ${site.name}
+//   3. HMI_IP                  -> IP address of the HMI/PLC on this site's LAN
+// ============================================================
+
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <HTTPClient.h>
+#include <SPIFFS.h>
+#include <ArduinoJson.h>
+#include <esp_task_wdt.h>
+
+const char* WIFI_SSID    = "";                          // TODO: ${site.name} WiFi SSID
+const char* WIFI_PASS    = "";                          // TODO: ${site.name} WiFi password
+const char* SITE_API_KEY = "";                          // TODO: dashboard API key for ${site.name} (generate in Admin > this site > API Keys)
+const char* INGEST_URL   = "${endpoint}";
+const char* QUEUE_FILE   = "/queue.jsonl";
+
+// HMI acting as Modbus TCP Server
+const char* HMI_IP = "";   // TODO: ${site.name} HMI/PLC IP, e.g. "192.168.8.10"
+const int   MODBUS_PORT = 502;
+
+const unsigned long POLL_INTERVAL_MS   = 15UL * 1000UL; // how often to read + send
+const int           MAX_FILE_LINES     = 5000;
+const int           MODBUS_MAX_RETRIES = 3;              // per-register retry attempts
+const int           SOCKET_REFRESH_CYCLES = 40;           // ~10 min at 15s interval
+const unsigned long WDT_TIMEOUT_S      = 30;              // reboot if loop stalls this long
+const unsigned long WIFI_RETRY_BASE_MS = 2000;            // backoff base for WiFi reconnect
+const unsigned long WIFI_RETRY_MAX_MS  = 60000;           // cap backoff at 60s
+
+WiFiClient modbusSocket;
+uint16_t modbusTransactionId = 0;
+unsigned long lastPollMs = 0;
+int pollsSinceSocketOpen = 0;
+unsigned long wifiRetryDelay = WIFI_RETRY_BASE_MS;
+unsigned long lastWifiAttemptMs = 0;
+
+// ===== Modbus register map =====
+// modbusAddr is already 0-based (mapping table address minus 1).
+struct MeterReg {
+  int modbusAddr;
+  const char* deviceKey;
+  const char* label;
+};
+
+MeterReg meters[] = {
+${meterEntries}
+};
+const int NUM_METERS = sizeof(meters) / sizeof(meters[0]);
+
+// Combine two 16-bit registers into a 32-bit value.
+// Delta typically stores DWORD as LOW word first, HIGH word second.
+// If values look wrong once tested, swap to: ((uint32_t)lo << 16) | hi;
+uint32_t combineWords(uint16_t lo, uint16_t hi) {
+  return ((uint32_t)hi << 16) | lo;
+}
+
+// ===== SPIFFS helpers (offline-buffering pattern) =====
+void appendToQueue(uint32_t values[], bool ok[], int count) {
+  File f = SPIFFS.open(QUEUE_FILE, FILE_APPEND);
+  if (!f) { Serial.println("Failed to open queue"); return; }
+  f.print("{");
+  for (int i = 0; i < count; i++) {
+    f.printf("\\"v%d\\":%u,\\"ok%d\\":%d", i, values[i], i, ok[i] ? 1 : 0);
+    if (i < count - 1) f.print(",");
+  }
+  f.println("}");
+  f.close();
+}
+
+int countQueueLines() {
+  File f = SPIFFS.open(QUEUE_FILE, FILE_READ);
+  if (!f) return 0;
+  int c = 0;
+  while (f.available()) { f.readStringUntil('\\n'); c++; }
+  f.close();
+  return c;
+}
+
+void removeFirstLines(int n) {
+  File src = SPIFFS.open(QUEUE_FILE, FILE_READ);
+  File tmp = SPIFFS.open("/tmp.jsonl", FILE_WRITE);
+  if (!src || !tmp) return;
+  int skipped = 0;
+  while (src.available()) {
+    String line = src.readStringUntil('\\n');
+    if (skipped < n) { skipped++; continue; }
+    if (line.length() > 0) tmp.println(line);
+  }
+  src.close(); tmp.close();
+  SPIFFS.remove(QUEUE_FILE);
+  SPIFFS.rename("/tmp.jsonl", QUEUE_FILE);
+}
+
+// ===== WiFi with backoff =====
+void connectWifi() {
+  if (WiFi.status() == WL_CONNECTED) {
+    wifiRetryDelay = WIFI_RETRY_BASE_MS; // reset backoff once healthy
+    return;
   }
 
-  const sketch = `#include <WiFi.h>
-#include <ArduinoJson.h>
-#include <ModbusTCP.h>
-#include <time.h>
+  unsigned long now = millis();
+  if (now - lastWifiAttemptMs < wifiRetryDelay) return; // still backing off
+  lastWifiAttemptMs = now;
 
-// WiFi Configuration
-const char* SSID = "YOUR_SSID";
-const char* PASSWORD = "YOUR_PASSWORD";
-const char* HMI_IP = "192.168.1.100";      // Delta HMI IP address
-const uint16_t HMI_PORT = 502;             // Modbus TCP port (default 502)
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  Serial.print("Connecting WiFi");
+  unsigned long t0 = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 10000) {
+    delay(250);
+    Serial.print(".");
+    esp_task_wdt_reset(); // don't let a slow connect trip the watchdog
+  }
 
-// API Configuration
-const char* API_KEY = "YOUR_SITE_API_KEY"; // From the admin panel
-const char* API_ENDPOINT = "${endpoint}";
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println(" OK");
+    wifiRetryDelay = WIFI_RETRY_BASE_MS;
+  } else {
+    Serial.println(" FAIL, backing off");
+    wifiRetryDelay = min(wifiRetryDelay * 2, WIFI_RETRY_MAX_MS);
+  }
+}
 
-// Modbus register addresses for Delta HMI
-const uint16_t REG_WASH_COUNT = 3025;
-const uint16_t REG_RINSE_METER = 3027;
-const uint16_t REG_RECYCLE_TOPUP = 3029;
-const uint16_t REG_MULTI_CLEAN_CHEM = 3031;
-const uint16_t REG_AUTOWASH_CHEM = 3033;
-const uint16_t REG_PEACH_WAX_CHEM = 3035;
+// ===== HTTPS send (fixed: explicit WiFiClientSecure so https:// actually connects) =====
+bool postPayload(const String& payload) {
+  WiFiClientSecure client;
+  client.setInsecure(); // no cert pinning needed for this endpoint/use case
 
-// Previous readings (for detecting changes)
-struct {
-  uint32_t wash_count = 0;
-  uint32_t rinse_meter = 0;
-  uint32_t recycle_topup = 0;
-  uint8_t multi_clean_chem = 0;
-  uint8_t autowash_chem = 0;
-  uint8_t peach_wax_chem = 0;
-} prevReadings;
+  HTTPClient http;
+  if (!http.begin(client, INGEST_URL)) {
+    Serial.println("http.begin() failed");
+    return false;
+  }
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("x-site-api-key", SITE_API_KEY);
+  http.setTimeout(8000);
+  int code = http.POST(payload);
+  http.end();
 
-ModbusTCP modbus;
-unsigned long lastReadTime = 0;
-const unsigned long READ_INTERVAL = 5000;  // Read every 5 seconds
+  if (code == 200) return true;
+  Serial.printf("Send failed (HTTP %d)\\n", code);
+  return false;
+}
+
+void flushQueue() {
+  File f = SPIFFS.open(QUEUE_FILE, FILE_READ);
+  if (!f || f.size() == 0) { if (f) f.close(); return; }
+  int sent = 0;
+  while (f.available()) {
+    String line = f.readStringUntil('\\n');
+    line.trim();
+    if (line.length() == 0) continue;
+    StaticJsonDocument<512> doc;
+    if (deserializeJson(doc, line)) continue;
+
+    String payload = "{\\"readings\\":[";
+    bool first = true;
+    for (int i = 0; i < NUM_METERS; i++) {
+      char okKey[8];
+      snprintf(okKey, sizeof(okKey), "ok%d", i);
+      bool wasOk = doc[okKey] | 0;
+      if (!wasOk) continue; // skip readings that failed this cycle - don't send bogus 0
+
+      char key[8];
+      snprintf(key, sizeof(key), "v%d", i);
+      uint32_t val = doc[key];
+
+      if (!first) payload += ",";
+      payload += "{\\"device_key\\":\\"" + String(meters[i].deviceKey) + "\\",\\"value\\":" + String(val) + "}";
+      first = false;
+    }
+    payload += "]}";
+
+    if (first) continue; // every reading in this queued line failed
+
+    if (WiFi.status() != WL_CONNECTED) connectWifi();
+    if (WiFi.status() != WL_CONNECTED) break;
+
+    if (postPayload(payload)) {
+      sent++;
+    } else {
+      break; // stop on first failure, retry whole remaining queue next cycle
+    }
+    esp_task_wdt_reset();
+  }
+  f.close();
+  if (sent > 0) {
+    Serial.printf("Flushed %d records\\n", sent);
+    removeFirstLines(sent);
+  }
+}
+
+bool ensureModbusConnected(bool forceReconnect = false) {
+  if (forceReconnect && modbusSocket.connected()) {
+    modbusSocket.stop();
+  }
+  if (modbusSocket.connected()) return true;
+
+  Serial.print("Connecting to HMI Modbus TCP...");
+  if (!modbusSocket.connect(HMI_IP, MODBUS_PORT)) {
+    Serial.println(" FAILED");
+    return false;
+  }
+  modbusSocket.setTimeout(2000);
+  Serial.println(" OK");
+  pollsSinceSocketOpen = 0;
+  return true;
+}
+
+// Reads \`numRegs\` holding registers starting at \`startAddr\` (0-based)
+// from the Modbus TCP server. Writes results into outRegs[]. Returns
+// true on success.
+bool modbusReadHoldingRegistersOnce(uint16_t startAddr, uint16_t numRegs, uint16_t outRegs[]) {
+  if (!ensureModbusConnected()) return false;
+
+  // Flush any stale/leftover bytes sitting in the socket buffer from a
+  // previous slow response before sending a new request.
+  while (modbusSocket.available()) {
+    modbusSocket.read();
+  }
+
+  modbusTransactionId++;
+
+  // Build the Modbus TCP request frame (MBAP header + PDU)
+  uint8_t request[12];
+  request[0] = (modbusTransactionId >> 8) & 0xFF; // Transaction ID hi
+  request[1] = modbusTransactionId & 0xFF;        // Transaction ID lo
+  request[2] = 0x00;                              // Protocol ID hi (always 0)
+  request[3] = 0x00;                              // Protocol ID lo (always 0)
+  request[4] = 0x00;                              // Length hi
+  request[5] = 0x06;                              // Length lo (6 bytes follow)
+  request[6] = 0x01;                              // Unit ID (station number)
+  request[7] = 0x03;                              // Function code: Read Holding Registers
+  request[8] = (startAddr >> 8) & 0xFF;           // Start address hi
+  request[9] = startAddr & 0xFF;                  // Start address lo
+  request[10] = (numRegs >> 8) & 0xFF;            // Quantity hi
+  request[11] = numRegs & 0xFF;                   // Quantity lo
+
+  modbusSocket.write(request, sizeof(request));
+
+  // Expected response: 9-byte header/prefix + 2 bytes per register
+  int expectedLen = 9 + (numRegs * 2);
+  uint8_t response[64];
+  int received = 0;
+  unsigned long t0 = millis();
+  while (received < expectedLen && millis() - t0 < 2000) {
+    if (modbusSocket.available()) {
+      int n = modbusSocket.read(response + received, expectedLen - received);
+      if (n > 0) received += n;
+    } else {
+      delay(2);
+    }
+  }
+
+  if (received < expectedLen) {
+    Serial.printf("Modbus read timeout (got %d of %d bytes)\\n", received, expectedLen);
+    modbusSocket.stop(); // force reconnect next attempt
+    return false;
+  }
+
+  // response[7] = function code (should echo 0x03, or 0x83 if error)
+  if (response[7] == 0x83) {
+    Serial.printf("Modbus exception code: 0x%02X\\n", response[8]);
+    return false;
+  }
+  if (response[7] != 0x03) {
+    Serial.println("Unexpected Modbus function code in response");
+    return false;
+  }
+
+  // response[8] = byte count, response[9..] = register data (big-endian per register)
+  for (int i = 0; i < numRegs; i++) {
+    uint8_t hiByte = response[9 + (i * 2)];
+    uint8_t loByte = response[9 + (i * 2) + 1];
+    outRegs[i] = ((uint16_t)hiByte << 8) | loByte;
+  }
+  return true;
+}
+
+// Retries a register read up to MODBUS_MAX_RETRIES times, forcing a
+// fresh socket connection between attempts.
+bool modbusReadHoldingRegisters(uint16_t startAddr, uint16_t numRegs, uint16_t outRegs[]) {
+  for (int attempt = 1; attempt <= MODBUS_MAX_RETRIES; attempt++) {
+    if (modbusReadHoldingRegistersOnce(startAddr, numRegs, outRegs)) return true;
+    Serial.printf("  retry %d/%d for addr %u\\n", attempt, MODBUS_MAX_RETRIES, startAddr);
+    ensureModbusConnected(true); // force reconnect before next attempt
+    delay(150);
+    esp_task_wdt_reset();
+  }
+  return false;
+}
+
+bool readAllMeters(uint32_t outValues[], bool outOk[]) {
+  bool anyOk = false;
+
+  // Proactively refresh the socket periodically — some Delta HMIs let
+  // long-held Modbus sockets go stale without a clean FIN/RST.
+  pollsSinceSocketOpen++;
+  if (pollsSinceSocketOpen >= SOCKET_REFRESH_CYCLES) {
+    Serial.println("Refreshing Modbus socket (periodic maintenance)");
+    ensureModbusConnected(true);
+  }
+
+  for (int i = 0; i < NUM_METERS; i++) {
+    uint16_t regs[2];
+    if (!modbusReadHoldingRegisters((uint16_t)meters[i].modbusAddr, 2, regs)) {
+      Serial.printf("%s: read failed after retries\\n", meters[i].label);
+      outValues[i] = 0;
+      outOk[i] = false;
+      delay(100);
+      esp_task_wdt_reset();
+      continue;
+    }
+
+    uint16_t lo = regs[0];
+    uint16_t hi = regs[1];
+    outValues[i] = combineWords(lo, hi);
+    outOk[i] = true;
+    anyOk = true;
+
+    Serial.printf("%s (Modbus addr %d): raw lo=%u hi=%u -> value=%u\\n",
+                  meters[i].label, meters[i].modbusAddr + 1, lo, hi, outValues[i]);
+
+    delay(100); // brief pause between requests, avoids overlapping/stale responses
+    esp_task_wdt_reset();
+  }
+  return anyOk; // true if AT LEAST ONE meter was read successfully this cycle
+}
 
 void setup() {
   Serial.begin(115200);
-  delay(1000);
-  
-  Serial.println("\\n\\nESP32 Modbus TCP Client");
-  Serial.println("Connecting to WiFi...");
-  
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(SSID, PASSWORD);
-  
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-    delay(500);
-    Serial.print(".");
-    attempts++;
-  }
-  
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\\nWiFi connected!");
-    Serial.print("IP: ");
-    Serial.println(WiFi.localIP());
-  } else {
-    Serial.println("\\nFailed to connect to WiFi");
-  }
-  
-  // Set up time for timestamps
-  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-  Serial.println("Waiting for NTP time sync...");
-  time_t now = time(nullptr);
-  while (now < 24 * 3600 * 2) {
-    delay(500);
-    Serial.print(".");
-    now = time(nullptr);
-  }
-  Serial.println("\\nTime synced");
-  
-  // Connect to Modbus TCP server
-  Serial.print("Connecting to Modbus TCP server at ");
-  Serial.print(HMI_IP);
-  Serial.print(":");
-  Serial.println(HMI_PORT);
-  
-  modbus.begin(HMI_IP, HMI_PORT);
+  delay(500);
+
+  // Hardware watchdog: reboot automatically if the loop ever stalls.
+  esp_task_wdt_config_t wdtConfig = {
+    .timeout_ms = WDT_TIMEOUT_S * 1000,
+    .idle_core_mask = 0,
+    .trigger_panic = true
+  };
+  esp_task_wdt_init(&wdtConfig);
+  esp_task_wdt_add(NULL);
+
+  if (!SPIFFS.begin(true)) Serial.println("SPIFFS mount failed!");
+  else Serial.printf("SPIFFS OK — %u bytes free\\n", SPIFFS.totalBytes() - SPIFFS.usedBytes());
+
+  connectWifi();
 }
 
 void loop() {
+  esp_task_wdt_reset();
+
+  if (WiFi.status() != WL_CONNECTED) connectWifi();
+
   unsigned long now = millis();
-  
-  if (now - lastReadTime >= READ_INTERVAL) {
-    lastReadTime = now;
-    
-    if (!modbus.isConnected(HMI_IP, HMI_PORT)) {
-      Serial.println("Modbus TCP disconnected, reconnecting...");
-      modbus.begin(HMI_IP, HMI_PORT);
-      delay(1000);
-    }
-    
-    if (modbus.isConnected(HMI_IP, HMI_PORT)) {
-      readModbusAndSend();
-    } else {
-      Serial.println("Failed to connect to Modbus TCP server");
-    }
-  }
-  
-  delay(100);
-}
+  if (now - lastPollMs >= POLL_INTERVAL_MS) {
+    lastPollMs = now;
 
-void readModbusAndSend() {
-  JsonDocument doc;
-  JsonArray readings = doc.createNestedArray("readings");
-  
-  bool hasReadings = false;
-  
-  // Read all registers
-  // Wash count - absolute counter (total)
-  uint32_t washCount = readHoldingRegister(REG_WASH_COUNT);
-  if (washCount != prevReadings.wash_count) {
-    JsonObject r = readings.createNestedObject();
-    r["device_key"] = "0001";  // Wash Count
-    r["value"] = washCount;
-    r["type"] = "total";
-    prevReadings.wash_count = washCount;
-    hasReadings = true;
-    Serial.print("Wash Count: ");
-    Serial.println(washCount);
+    uint32_t values[NUM_METERS];
+    bool ok[NUM_METERS];
+    readAllMeters(values, ok); // fills what it can; failed reads are marked not-ok
+    if (countQueueLines() >= MAX_FILE_LINES) removeFirstLines(100);
+    appendToQueue(values, ok, NUM_METERS);
+    flushQueue();
   }
-  
-  // Rinse meter - absolute counter (total)
-  uint32_t rinseMeter = readHoldingRegister(REG_RINSE_METER);
-  if (rinseMeter != prevReadings.rinse_meter) {
-    JsonObject r = readings.createNestedObject();
-    r["device_key"] = "0002";  // Rinse Meter
-    r["value"] = rinseMeter;
-    r["type"] = "total";
-    prevReadings.rinse_meter = rinseMeter;
-    hasReadings = true;
-    Serial.print("Rinse Meter: ");
-    Serial.println(rinseMeter);
-  }
-  
-  // Recycle top-up - absolute counter (total)
-  uint32_t recycleTopup = readHoldingRegister(REG_RECYCLE_TOPUP);
-  if (recycleTopup != prevReadings.recycle_topup) {
-    JsonObject r = readings.createNestedObject();
-    r["device_key"] = "0003";  // Recycle Top-up
-    r["value"] = recycleTopup;
-    r["type"] = "total";
-    prevReadings.recycle_topup = recycleTopup;
-    hasReadings = true;
-    Serial.print("Recycle Top-up: ");
-    Serial.println(recycleTopup);
-  }
-  
-  // Chemical levels (0=full, 1=empty)
-  uint8_t multiCleanChem = readHoldingRegister(REG_MULTI_CLEAN_CHEM) & 0xFF;
-  if (multiCleanChem != prevReadings.multi_clean_chem) {
-    JsonObject r = readings.createNestedObject();
-    r["device_key"] = "CHEM_001";  // Multi Clean Chemical
-    r["value"] = multiCleanChem;
-    r["type"] = "level";
-    prevReadings.multi_clean_chem = multiCleanChem;
-    hasReadings = true;
-    Serial.print("Multi Clean Chemical: ");
-    Serial.println(multiCleanChem == 0 ? "FULL" : "LOW");
-  }
-  
-  uint8_t autowashChem = readHoldingRegister(REG_AUTOWASH_CHEM) & 0xFF;
-  if (autowashChem != prevReadings.autowash_chem) {
-    JsonObject r = readings.createNestedObject();
-    r["device_key"] = "CHEM_002";  // Autowash Chemical
-    r["value"] = autowashChem;
-    r["type"] = "level";
-    prevReadings.autowash_chem = autowashChem;
-    hasReadings = true;
-    Serial.print("Autowash Chemical: ");
-    Serial.println(autowashChem == 0 ? "FULL" : "LOW");
-  }
-  
-  uint8_t peachWaxChem = readHoldingRegister(REG_PEACH_WAX_CHEM) & 0xFF;
-  if (peachWaxChem != prevReadings.peach_wax_chem) {
-    JsonObject r = readings.createNestedObject();
-    r["device_key"] = "CHEM_003";  // Peach Wax Chemical
-    r["value"] = peachWaxChem;
-    r["type"] = "level";
-    prevReadings.peach_wax_chem = peachWaxChem;
-    hasReadings = true;
-    Serial.print("Peach Wax Chemical: ");
-    Serial.println(peachWaxChem == 0 ? "FULL" : "LOW");
-  }
-  
-  // If any readings changed, send them
-  if (hasReadings && readings.size() > 0) {
-    sendReadings(doc);
-  }
-}
 
-uint32_t readHoldingRegister(uint16_t regAddr) {
-  // Read 2 consecutive registers (32-bit value)
-  uint16_t result[2] = {0, 0};
-  if (modbus.readHreg(HMI_IP, regAddr, result, 2)) {
-    // Combine registers: high word + low word
-    return ((uint32_t)result[0] << 16) | result[1];
-  }
-  Serial.print("Failed to read register ");
-  Serial.println(regAddr);
-  return 0;
-}
-
-void sendReadings(JsonDocument& doc) {
-  // Get current timestamp
-  time_t now = time(nullptr);
-  struct tm timeinfo = *localtime(&now);
-  char timestamp[30];
-  strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
-  
-  // Add timestamp to first reading
-  JsonArray readings = doc["readings"].as<JsonArray>();
-  if (readings.size() > 0) {
-    readings[0]["recorded_at"] = timestamp;
-  }
-  
-  String payload;
-  serializeJson(doc, payload);
-  
-  Serial.println("Sending: ");
-  Serial.println(payload);
-  
-  WiFiClient client;
-  if (client.connect(WiFi.gatewayIP(), 80)) {
-    // Extract path from endpoint
-    String path = "/api/public/ingest";
-    
-    client.print("POST ");
-    client.print(path);
-    client.println(" HTTP/1.1");
-    client.print("Host: ");
-    client.println(WiFi.gatewayIP());
-    client.println("Content-Type: application/json");
-    client.println("x-site-api-key: " + String(API_KEY));
-    client.print("Content-Length: ");
-    client.println(payload.length());
-    client.println();
-    client.println(payload);
-    
-    // Wait for response
-    while (client.connected()) {
-      if (client.available()) {
-        String line = client.readStringUntil('\\n');
-        Serial.println(line);
-        if (line == "\\r") break;  // End of headers
-      }
-    }
-    client.stop();
-    Serial.println("Request sent");
-  } else {
-    Serial.println("Failed to connect to API endpoint");
-  }
+  delay(10);
 }
 `;
 
   return sketch;
 }
+
 
 function EspSketchDialog({ site, meters, onClose }: { site: Site | null; meters: Meter[]; onClose: () => void }) {
   const code = site ? buildEsp32Sketch(site, meters) : "";
