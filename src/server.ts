@@ -95,6 +95,18 @@ export default {
   async scheduled(_event: unknown, env: unknown, _ctx: unknown) {
     setRuntimeEnv(env as Env);
 
+    // Diagnostic heartbeat: writes a row every time this handler actually
+    // runs, independent of whether report-sending succeeds or fails. Lets
+    // us confirm from Supabase whether the Cloudflare cron trigger is
+    // firing at all, without needing Cloudflare dashboard/CLI access.
+    try {
+      const { getSupabaseAdmin } = await import("./lib/supabase");
+      const db = getSupabaseAdmin(env as Env);
+      await db.from("cron_heartbeats").insert({ note: "scheduled() invoked" });
+    } catch (e) {
+      console.error("Cron heartbeat failed:", e);
+    }
+
     // Previously this made an HTTP request back to the worker's own URL to
     // trigger report sending — but that URL had to be guessed (or manually
     // configured via WORKER_BASE_URL/WORKER_URL), and if it didn't match the
