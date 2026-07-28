@@ -20,6 +20,7 @@ interface SiteMetric {
   wash_today: number;
   wash_total: number;
   fresh_today: number;
+  fresh_total: number;
   chemicals_total: number;
   chemicals_low: number;
   is_new_today: boolean;
@@ -114,7 +115,7 @@ function DashboardPage() {
           .select("id, meter_type, sensor_type, low_threshold")
           .eq("site_id", site.id);
 
-        let washToday = 0, washTotal = 0, freshToday = 0, chemLow = 0, chemTotal = 0;
+        let washToday = 0, washTotal = 0, freshToday = 0, freshTotal = 0, chemLow = 0, chemTotal = 0;
         let lastSeen = "";
 
         const meterMap = new Map(meters?.map((m: any) => [m.id, m]) || []);
@@ -149,6 +150,7 @@ function DashboardPage() {
             washToday += Math.max(0, latestValue - midnightValue);
           } else if (meter.meter_type === "fresh_water") {
             freshToday += Math.max(0, latestValue - midnightValue);
+            freshTotal += latestValue;
           } else if (meter.meter_type === "chemical") {
             chemTotal++;
             if (meter.sensor_type === "probe") {
@@ -176,6 +178,7 @@ function DashboardPage() {
           wash_today: washToday,
           wash_total: washTotal,
           fresh_today: freshToday,
+          fresh_total: freshTotal,
           chemicals_total: chemTotal,
           chemicals_low: chemLow,
           is_new_today: isNewToday,
@@ -290,14 +293,14 @@ function SiteCard({ site }: { site: SiteMetric }) {
               <div className="text-xs text-muted-foreground mt-1">washes</div>
             </div>
 
-            {/* Lifetime */}
+            {/* Total Wash Counts */}
             <div className="bg-muted rounded-lg p-4 border border-border">
               <div className="flex items-center gap-2 mb-2">
                 <TrendingUp className="h-4 w-4 text-cyan-400" />
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Total</span>
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Total Wash Counts</span>
               </div>
-              <div className="text-2xl font-bold text-foreground">{(site.wash_total / 1000).toFixed(1)}k</div>
-              <div className="text-xs text-muted-foreground mt-1">lifetime</div>
+              <div className="text-2xl font-bold text-foreground">{Math.round(site.wash_total).toLocaleString()}</div>
+              <div className="text-xs text-muted-foreground mt-1">washes</div>
             </div>
 
             {/* Fresh Water */}
@@ -319,15 +322,25 @@ function SiteCard({ site }: { site: SiteMetric }) {
                     site.fresh_water_alert ? "text-red-300" : "text-muted-foreground"
                   }`}
                 >
-                  Fresh{site.fresh_water_alert ? " – High Usage" : ""}
+                  Fresh Water Usage Today{site.fresh_water_alert ? " – High" : ""}
                 </span>
               </div>
               <div className={`text-2xl font-bold ${site.fresh_water_alert ? "text-red-300" : "text-foreground"}`}>
-                {site.fresh_today.toFixed(0)}
+                {Math.round(site.fresh_today).toLocaleString()}
               </div>
               <div className={`text-xs mt-1 ${site.fresh_water_alert ? "text-red-300/80" : "text-cyan-400"}`}>
-                {site.is_new_today ? "liters since setup" : "liters today"}
+                {site.is_new_today ? "liters since setup" : "liters"}
               </div>
+            </div>
+
+            {/* Total Fresh Water */}
+            <div className="bg-muted rounded-lg p-4 border border-border">
+              <div className="flex items-center gap-2 mb-2">
+                <Droplets className="h-4 w-4 text-cyan-400" />
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Total Fresh Water</span>
+              </div>
+              <div className="text-2xl font-bold text-foreground">{Math.round(site.fresh_total).toLocaleString()}</div>
+              <div className="text-xs text-muted-foreground mt-1">liters</div>
             </div>
 
             {/* Chemicals */}
