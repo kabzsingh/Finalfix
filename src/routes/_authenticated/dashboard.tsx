@@ -115,6 +115,17 @@ function DashboardPage() {
           .select("id, meter_type, sensor_type, low_threshold")
           .eq("site_id", site.id);
 
+        // Active low events (topped_up_at IS NULL) are the persisted, debounced
+        // source of truth for switch/counter chemicals — NOT the latest raw
+        // reading, which can bounce (a float switch blip, a brief misread)
+        // and cause the status to flicker back to green on its own.
+        const { data: activeLowEvents } = await supabase
+          .from("chemical_low_events")
+          .select("meter_id")
+          .eq("site_id", site.id)
+          .is("topped_up_at", null);
+        const activeLowMeterIds = new Set((activeLowEvents ?? []).map((e: any) => e.meter_id));
+
         let washToday = 0, washTotal = 0, freshToday = 0, freshTotal = 0, chemLow = 0, chemTotal = 0;
         let lastSeen = "";
 
@@ -155,11 +166,14 @@ function DashboardPage() {
             chemTotal++;
             if (meter.sensor_type === "probe") {
               // Probe reports liters remaining in the drum — low when it
-              // drops below the configured threshold (e.g. under 20L).
+              // drops below the configured threshold (e.g. under 20L). A
+              // continuous reading, so no debounce needed.
               if (meter.low_threshold != null && latestValue < Number(meter.low_threshold)) chemLow++;
             } else {
-              // Switch: a binary float-switch signal (>=1 means triggered/low).
-              if (latestValue >= 1) chemLow++;
+              // Switch / counter: trust the persisted, debounced tracked
+              // event rather than the single latest raw reading, so a
+              // momentary blip can't flip the status back to green on its own.
+              if (activeLowMeterIds.has(meterId)) chemLow++;
             }
           }
         });

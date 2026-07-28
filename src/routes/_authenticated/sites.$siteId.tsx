@@ -105,31 +105,21 @@ function SiteDetail() {
     const rows = (r as any) ?? [];
     setReadings(rows);
 
-    // Find when each chemical meter went low
+    // Determine which chemical meters are currently low from the persisted,
+    // debounced chemical_low_events table (an active row = topped_up_at IS
+    // NULL) — NOT by re-scanning raw readings for the latest value. A raw
+    // scan would flicker back to "OK" from a single noisy blip (a float
+    // switch bounce, a brief misread); the persisted table only clears once
+    // the backend has confirmed several consecutive OK readings.
     const chemMeters = ((m as any) ?? []).filter((x: Meter) => x.meter_type === "chemical");
-    const newLowEvents: ChemLowEvent[] = [];
-    for (const cm of chemMeters) {
-      const { data: chemReadings } = await supabase
-        .from("readings")
-        .select("value,recorded_at")
-        .eq("meter_id", cm.id)
-        .order("recorded_at", { ascending: false })
-        .limit(200);
-      const cr = (chemReadings ?? []) as { value: number; recorded_at: string }[];
-      if (cr.length === 0) continue;
-      const latest = cr[0];
-      const isLow = Number(latest.value) >= 1;
-      if (!isLow) continue;
-      let lowSince = latest.recorded_at;
-      for (let i = 1; i < cr.length; i++) {
-        if (Number(cr[i].value) >= 1) {
-          lowSince = cr[i].recorded_at;
-        } else {
-          break;
-        }
-      }
-      newLowEvents.push({ meter_id: cm.id, low_since: lowSince });
-    }
+    const { data: activeEvents } = await supabase
+      .from("chemical_low_events")
+      .select("meter_id, went_low_at")
+      .eq("site_id", siteId)
+      .is("topped_up_at", null);
+    const newLowEvents: ChemLowEvent[] = ((activeEvents ?? []) as any[])
+      .filter((e) => chemMeters.some((cm: Meter) => cm.id === e.meter_id))
+      .map((e) => ({ meter_id: e.meter_id, low_since: e.went_low_at }));
     setChemLowEvents(newLowEvents);
     // Find how many washes had occurred when each chemical went low
     const washMeter = ((m as any) ?? []).find((x: Meter) => x.meter_type === "wash");
@@ -737,24 +727,22 @@ function SiteDetail() {
               } else if (isCounter && lvl) {
                 // Counter: the PLC itself maintains a running "washes since
                 // low" count — increments by 1 per wash while low, resets to
-                // 0 on top-up. The reading IS the count; no reconstruction
-                // from wash-meter deltas needed.
+                // 0 on top-up. isLow comes from the persisted, debounced
+                // chemLowEvents (not the raw latest reading directly), so a
+                // single misread can't flip it back to green on its own.
+                const lowEvent = chemLowEvents.find((e) => e.meter_id === lvl.id);
+                isLow = !!lowEvent;
+
                 const latestCounterReading = stats.latestByMeter.get(lvl.id);
                 const counterValue = latestCounterReading ? Number(latestCounterReading.value) : 0;
-                isLow = counterValue > 0;
                 washesSinceLow = isLow ? counterValue : null;
 
-                if (isLow) {
-                  const activeDbEvent = chemicalFillHistory.find(
-                    (e) => e.meter_id === lvl.id && e.topped_up_at === null,
-                  );
-                  if (activeDbEvent) {
-                    const lowDelta = Math.floor((now - new Date(activeDbEvent.went_low_at).getTime()) / 1000);
-                    lowSinceLabel = lowDelta < 60 ? "just now"
-                      : lowDelta < 3600 ? `${Math.floor(lowDelta / 60)}m ago`
-                      : lowDelta < 86400 ? `${Math.floor(lowDelta / 3600)}h ago`
-                      : `${Math.floor(lowDelta / 86400)}d ago`;
-                  }
+                if (isLow && lowEvent) {
+                  const lowDelta = Math.floor((now - new Date(lowEvent.low_since).getTime()) / 1000);
+                  lowSinceLabel = lowDelta < 60 ? "just now"
+                    : lowDelta < 3600 ? `${Math.floor(lowDelta / 60)}m ago`
+                    : lowDelta < 86400 ? `${Math.floor(lowDelta / 3600)}h ago`
+                    : `${Math.floor(lowDelta / 86400)}d ago`;
                 }
               } else if (lvl) {
                 // Chemical-per-wash: only meaningful over the DRAIN phase (from a
