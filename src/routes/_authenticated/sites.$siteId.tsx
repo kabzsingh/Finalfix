@@ -407,7 +407,6 @@ function SiteDetail() {
   }, [readings, meters, totals, todays]);
 
   const chemicalLevelMeters = meters.filter((m) => m.meter_type === "chemical");
-  const chemicalFlowMeters = meters.filter((m) => m.meter_type === "chemical_flow");
   const washMeters = meters.filter((m) => m.meter_type === "wash");
   const freshMeters = meters.filter((m) => m.meter_type === "fresh_water");
 
@@ -420,17 +419,13 @@ function SiteDetail() {
   const avgWaterPerCar = rinseMeter && stats.washToday > 0 ? rinseToday / stats.washToday : null;
 
   const chemicalGroups = useMemo(() => {
-    const groups = new Map<string, { label: string; level?: Meter; flow?: Meter }>();
-    const push = (key: string, label: string, m: Meter) => {
-      const g = groups.get(key) ?? { label };
-      if (m.meter_type === "chemical") g.level = m;
-      else if (m.meter_type === "chemical_flow") g.flow = m;
-      groups.set(key, g);
-    };
-    for (const m of chemicalLevelMeters) push(m.chemical_group || `lvl:${m.id}`, m.chemical_group || m.name, m);
-    for (const m of chemicalFlowMeters) push(m.chemical_group || `flw:${m.id}`, m.chemical_group || m.name, m);
+    const groups = new Map<string, { label: string; level?: Meter }>();
+    for (const m of chemicalLevelMeters) {
+      const key = m.chemical_group || `lvl:${m.id}`;
+      groups.set(key, { label: m.chemical_group || m.name, level: m });
+    }
     return Array.from(groups.values());
-  }, [chemicalLevelMeters, chemicalFlowMeters]);
+  }, [chemicalLevelMeters]);
 
   if (!site) return <div className="text-muted-foreground">Loading…</div>;
 
@@ -723,11 +718,6 @@ function SiteDetail() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {chemicalGroups.map((g, i) => {
               const lvl = g.level;
-              const flw = g.flow;
-              const flwLast = flw ? stats.latestByMeter.get(flw.id) : undefined;
-              const flwToday = flw ? todays[flw.id] ?? 0 : 0;
-              const flwTotal = flw ? totals[flw.id] ?? 0 : 0;
-              const perWash = flw && stats.washToday > 0 ? flwToday / stats.washToday : null;
 
               let isLow = false;
               let washesSinceLow: number | null = null;
@@ -907,35 +897,6 @@ function SiteDetail() {
                       Set the low-mark drop volume (e.g. 50L) in Admin to calculate chemical used per wash.
                     </div>
                   )}
-                  {flw ? (
-                    <div className="rounded-lg border border-border bg-card/60 p-3">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="font-medium truncate">Flow — {flw.name}</span>
-                        <span className="tabular-nums text-xs text-muted-foreground">
-                          {(flwLast ? Number(flwLast.value) : 0).toFixed(2)} {flw.unit}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2 mt-2 text-xs">
-                        <div className="rounded bg-secondary/60 px-2 py-1">
-                          <div className="text-muted-foreground">Today</div>
-                          <div className="font-semibold tabular-nums">{flwToday.toFixed(2)} {flw.unit}</div>
-                        </div>
-                        <div className="rounded bg-secondary/60 px-2 py-1">
-                          <div className="text-muted-foreground">Total</div>
-                          <div className="font-semibold tabular-nums">{flwTotal.toFixed(2)} {flw.unit}</div>
-                        </div>
-                        <div className="rounded bg-secondary/60 px-2 py-1">
-                          <div className="text-muted-foreground">Per wash</div>
-                          <div className="font-semibold tabular-nums">
-                            {perWash != null ? `${perWash.toFixed(2)} ${flw.unit}` : "—"}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">No flow meter</div>
-                  )}
-                  {flw ? <AdminAdjust meterId={flw.id} siteId={siteId} unit={flw.unit} onSaved={load} /> : null}
                 </div>
               );
             })}

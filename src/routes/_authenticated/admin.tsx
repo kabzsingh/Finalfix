@@ -937,7 +937,6 @@ function SiteAdminCard({
                     <SelectItem value="wash">Wash</SelectItem>
                     <SelectItem value="fresh_water">Water</SelectItem>
                     <SelectItem value="chemical">Level</SelectItem>
-                    <SelectItem value="chemical_flow">Flow</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
