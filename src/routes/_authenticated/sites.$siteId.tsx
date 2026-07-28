@@ -22,7 +22,7 @@ interface Meter {
   low_threshold: number | null;
   device_key: string;
   chemical_group: string | null;
-  sensor_type?: "switch" | "probe";
+  sensor_type?: "switch" | "probe" | "counter";
 }
 interface Reading {
   meter_id: string;
@@ -735,6 +735,7 @@ function SiteDetail() {
               let litresPerWash: number | null = null;
               let washesThisDrainCycle: number | null = null;
               const isProbe = lvl?.sensor_type === "probe";
+              const isCounter = lvl?.sensor_type === "counter";
               const probeReading = isProbe && lvl ? stats.latestByMeter.get(lvl.id) : undefined;
               const litersRemaining = probeReading ? Number(probeReading.value) : null;
 
@@ -743,6 +744,28 @@ function SiteDetail() {
                 // below the configured threshold. No event-history estimation
                 // needed since we have a live, continuous reading.
                 isLow = litersRemaining != null && lvl.low_threshold != null && litersRemaining < lvl.low_threshold;
+              } else if (isCounter && lvl) {
+                // Counter: the PLC itself maintains a running "washes since
+                // low" count — increments by 1 per wash while low, resets to
+                // 0 on top-up. The reading IS the count; no reconstruction
+                // from wash-meter deltas needed.
+                const latestCounterReading = stats.latestByMeter.get(lvl.id);
+                const counterValue = latestCounterReading ? Number(latestCounterReading.value) : 0;
+                isLow = counterValue > 0;
+                washesSinceLow = isLow ? counterValue : null;
+
+                if (isLow) {
+                  const activeDbEvent = chemicalFillHistory.find(
+                    (e) => e.meter_id === lvl.id && e.topped_up_at === null,
+                  );
+                  if (activeDbEvent) {
+                    const lowDelta = Math.floor((now - new Date(activeDbEvent.went_low_at).getTime()) / 1000);
+                    lowSinceLabel = lowDelta < 60 ? "just now"
+                      : lowDelta < 3600 ? `${Math.floor(lowDelta / 60)}m ago`
+                      : lowDelta < 86400 ? `${Math.floor(lowDelta / 3600)}h ago`
+                      : `${Math.floor(lowDelta / 86400)}d ago`;
+                  }
+                }
               } else if (lvl) {
                 // Chemical-per-wash: only meaningful over the DRAIN phase (from a
                 // refill, when the container is full, down to the moment it next
@@ -845,9 +868,11 @@ function SiteDetail() {
                       <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3">
                         <div className="flex items-center justify-between">
                           <div className="text-sm font-semibold text-destructive">⚠ Chemical Low</div>
-                          {lowSinceLabel && (
+                          {lowSinceLabel ? (
                             <div className="text-[11px] text-destructive/70">since {lowSinceLabel}</div>
-                          )}
+                          ) : isCounter ? (
+                            <div className="text-[10px] font-mono px-1 rounded text-destructive/70">COUNTER</div>
+                          ) : null}
                         </div>
                         <div className="mt-1 text-xs text-muted-foreground">{lvl.name}</div>
                         <div className="mt-3 flex items-end gap-2">

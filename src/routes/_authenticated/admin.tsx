@@ -36,7 +36,7 @@ interface Site {
   fresh_water_daily_threshold_liters?: number | null;
   machine_type?: string | null;
 }
-interface Meter { id: string; site_id: string; meter_type: "wash"|"fresh_water"|"chemical"|"chemical_flow"; name: string; unit: string; capacity: number | null; low_threshold: number | null; device_key: string; position: number; chemical_group: string | null; modbus_address: number | null; sensor_type: "switch" | "probe" }
+interface Meter { id: string; site_id: string; meter_type: "wash"|"fresh_water"|"chemical"|"chemical_flow"; name: string; unit: string; capacity: number | null; low_threshold: number | null; device_key: string; position: number; chemical_group: string | null; modbus_address: number | null; sensor_type: "switch" | "probe" | "counter" }
 interface ApiKeyRow { id: string; site_id: string; key_prefix: string; label: string | null; revoked: boolean; last_used_at: string | null; created_at: string }
 
 const SETUP_SQL_HINT =
@@ -240,7 +240,7 @@ scripts/setup-admin.sql`}
     }
   };
 
-  const updateMeter = async (id: string, updates: { capacity: number | null; low_threshold: number | null; modbus_address?: number | null; sensor_type?: "switch" | "probe" }): Promise<boolean> => {
+  const updateMeter = async (id: string, updates: { capacity: number | null; low_threshold: number | null; modbus_address?: number | null; sensor_type?: "switch" | "probe" | "counter" }): Promise<boolean> => {
     try {
       const payload: any = { capacity: updates.capacity, low_threshold: updates.low_threshold };
       if (updates.modbus_address !== undefined) payload.modbus_address = updates.modbus_address;
@@ -658,14 +658,14 @@ function MeterRow({
   meter, onUpdateMeter, onRemoveMeter,
 }: {
   meter: Meter;
-  onUpdateMeter: (id: string, updates: { capacity: number | null; low_threshold: number | null; modbus_address?: number | null; sensor_type?: "switch" | "probe" }) => Promise<boolean>;
+  onUpdateMeter: (id: string, updates: { capacity: number | null; low_threshold: number | null; modbus_address?: number | null; sensor_type?: "switch" | "probe" | "counter" }) => Promise<boolean>;
   onRemoveMeter: (id: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [capacity, setCapacity] = useState(meter.capacity != null ? String(meter.capacity) : "");
   const [lowThreshold, setLowThreshold] = useState(meter.low_threshold != null ? String(meter.low_threshold) : "");
   const [modbusAddress, setModbusAddress] = useState(meter.modbus_address != null ? String(meter.modbus_address) : "");
-  const [sensorType, setSensorType] = useState<"switch" | "probe">(meter.sensor_type ?? "switch");
+  const [sensorType, setSensorType] = useState<"switch" | "probe" | "counter">(meter.sensor_type ?? "switch");
   const [saving, setSaving] = useState(false);
   const isChemical = meter.meter_type === "chemical" || meter.meter_type === "chemical_flow";
   const isChemicalLevel = meter.meter_type === "chemical";
@@ -745,11 +745,12 @@ function MeterRow({
               {isChemicalLevel && (
                 <div className="space-y-1">
                   <Label className="text-[10px]">Sensor Type</Label>
-                  <Select value={sensorType} onValueChange={(v) => setSensorType(v as "switch" | "probe")}>
+                  <Select value={sensorType} onValueChange={(v) => setSensorType(v as "switch" | "probe" | "counter")}>
                     <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="switch">Switch (float — low/ok only)</SelectItem>
                       <SelectItem value="probe">Probe (continuous level reading)</SelectItem>
+                      <SelectItem value="counter">Counter (PLC counts washes since low)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -798,7 +799,7 @@ function SiteAdminCard({
   site: Site; meters: Meter[]; keys: ApiKeyRow[];
   onRemoveSite: () => void;
   onAddMeter: (m: Partial<Meter>) => Promise<boolean>;
-  onUpdateMeter: (id: string, updates: { capacity: number | null; low_threshold: number | null; modbus_address?: number | null; sensor_type?: "switch" | "probe" }) => Promise<boolean>;
+  onUpdateMeter: (id: string, updates: { capacity: number | null; low_threshold: number | null; modbus_address?: number | null; sensor_type?: "switch" | "probe" | "counter" }) => Promise<boolean>;
   onRemoveMeter: (id: string) => void;
   onGenerateKey: () => void;
   onRevokeKey: (id: string) => void;
@@ -814,7 +815,7 @@ function SiteAdminCard({
   const [capacity, setCapacity] = useState("");
   const [low, setLow] = useState("");
   const [group, setGroup] = useState("");
-  const [sensorType, setSensorType] = useState<"switch" | "probe">("switch");
+  const [sensorType, setSensorType] = useState<"switch" | "probe" | "counter">("switch");
   const [editingDetails, setEditingDetails] = useState(false);
   const [editName, setEditName] = useState(site.name);
   const [editLocation, setEditLocation] = useState(site.location ?? "");
@@ -970,11 +971,12 @@ function SiteAdminCard({
               {type === "chemical" && (
                 <div className="flex-1 space-y-1 w-full">
                   <Label className="text-[10px]">Sensor Type</Label>
-                  <Select value={sensorType} onValueChange={(v) => setSensorType(v as "switch" | "probe")}>
+                  <Select value={sensorType} onValueChange={(v) => setSensorType(v as "switch" | "probe" | "counter")}>
                     <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="switch">Switch (float — low/ok only)</SelectItem>
                       <SelectItem value="probe">Probe (continuous level reading)</SelectItem>
+                      <SelectItem value="counter">Counter (PLC counts washes since low)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

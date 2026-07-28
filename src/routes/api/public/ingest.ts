@@ -74,7 +74,8 @@ export const Route = createFileRoute("/api/public/ingest")({
 
         // Separate readings by type
         const readings: any[] = [];
-        const chemicalReadings: any[] = [];
+        const chemicalSwitchReadings: any[] = [];
+        const chemicalCounterReadings: any[] = [];
         const unknown: string[] = [];
 
         for (const r of parsed.data.readings) {
@@ -84,18 +85,23 @@ export const Route = createFileRoute("/api/public/ingest")({
             continue; 
           }
 
-          // A meter configured as a switch-type chemical is ALWAYS a level/state
-          // reading, regardless of what the payload's own "type" field says.
-          // The ESP32 firmware sends plain {device_key, value} with no "type" at
-          // all, which defaults to 'total' — so relying solely on r.type === 'level'
-          // meant real hardware never triggered chemical low-tracking at all.
-          // Probe-type chemicals are excluded here since they report a continuous
-          // liters-remaining value, not a binary state, and are stored as regular
-          // readings like any other meter.
-          const isSwitchChemical = meterInfo.type === "chemical" && meterInfo.sensorType !== "probe";
+          // Chemical meters are routed by their ACTUAL configured sensor_type
+          // in Admin, not by the payload's own "type" field — the ESP32
+          // firmware sends plain {device_key, value} with no "type" at all
+          // (defaults to 'total'), so relying on r.type === 'level' meant
+          // real hardware never triggered chemical low-tracking at all.
+          //
+          // - "switch": a binary 0/1 float-switch signal
+          // - "counter": the PLC already maintains a running "washes since
+          //   low" count itself (increments while low, resets to 0 on
+          //   top-up) — the value IS the count, no reconstruction needed
+          // - "probe": continuous liters-remaining reading, stored as a
+          //   regular reading like any other meter (not routed here)
+          const isSwitchChemical = meterInfo.type === "chemical" && (meterInfo.sensorType === "switch" || meterInfo.sensorType == null);
+          const isCounterChemical = meterInfo.type === "chemical" && meterInfo.sensorType === "counter";
 
           if (r.type === 'level' || isSwitchChemical) {
-            chemicalReadings.push({
+            chemicalSwitchReadings.push({
               device_key: r.device_key,
               meter_id: meterInfo.id,
               site_id: keyRow.site_id,
@@ -106,6 +112,23 @@ export const Route = createFileRoute("/api/public/ingest")({
             // "latest value >= 1 means low" check reads from the readings
             // table directly, so this needs to land there too, not just
             // feed the separate low-event-tracking system above.
+            readings.push({
+              site_id: keyRow.site_id,
+              meter_id: meterInfo.id,
+              value: r.value,
+              reading_type: 'total',
+              ...(r.recorded_at ? { recorded_at: r.recorded_at } : {}),
+            });
+            continue;
+          }
+
+          if (isCounterChemical) {
+            chemicalCounterReadings.push({
+              meter_id: meterInfo.id,
+              site_id: keyRow.site_id,
+              counter: Math.round(r.value),
+              recorded_at: r.recorded_at || new Date().toISOString(),
+            });
             readings.push({
               site_id: keyRow.site_id,
               meter_id: meterInfo.id,
@@ -128,7 +151,7 @@ export const Route = createFileRoute("/api/public/ingest")({
           }
         }
 
-        if (readings.length === 0 && chemicalReadings.length === 0) {
+        if (readings.length === 0 && chemicalSwitchReadings.length === 0 && chemicalCounterReadings.length === 0) {
           return json({ error: "No matching meters", unknown }, 400);
         }
 
@@ -140,7 +163,7 @@ export const Route = createFileRoute("/api/public/ingest")({
 
         // Process chemical state changes and track low events
         let chemicalEvents = 0;
-        for (const chem of chemicalReadings) {
+        for (const chem of chemicalSwitchReadings) {
           // Find the wash meter for this site to get current wash count
           const washMeter = meters.find((m) => m.meter_type === "wash");
           
@@ -155,6 +178,20 @@ export const Route = createFileRoute("/api/public/ingest")({
             if (data?.event !== 'no_change') chemicalEvents++;
           } catch (e) {
             console.error(`Failed to handle chemical state for meter ${chem.meter_id}:`, e);
+          }
+        }
+
+        for (const chem of chemicalCounterReadings) {
+          try {
+            const { data } = await db.rpc('handle_chemical_counter_change', {
+              p_site_id: chem.site_id,
+              p_meter_id: chem.meter_id,
+              p_counter_value: chem.counter,
+              p_now: chem.recorded_at,
+            });
+            if (data?.event !== 'no_change') chemicalEvents++;
+          } catch (e) {
+            console.error(`Failed to handle chemical counter for meter ${chem.meter_id}:`, e);
           }
         }
 
