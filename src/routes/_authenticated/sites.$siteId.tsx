@@ -108,6 +108,34 @@ function SiteDetail() {
       .order("recorded_at", { ascending: true })
       .limit(5000);
     const rows = (r as any) ?? [];
+
+    // On a busy site, the bulk 24h fetch above (capped at 5000 rows, ordered
+    // oldest-first) can be truncated well before "now" — e.g. 7+ meters
+    // logging every 15-30s easily produces 20,000+ readings/day. That left
+    // chemical status briefly showing stale, hours-old data on page load,
+    // only "catching up" once the first fresh realtime reading arrived —
+    // looking like a flicker/jump. Explicitly fetch each chemical meter's
+    // true latest reading so it's correct from the very first render.
+    const chemMetersForSeed = ((m as any) ?? []).filter(
+      (x: Meter) => x.meter_type === "chemical" || x.meter_type === "chemical_flow",
+    );
+    if (chemMetersForSeed.length > 0) {
+      const latestChemReadings = await Promise.all(
+        chemMetersForSeed.map((cm: Meter) =>
+          supabase
+            .from("readings")
+            .select("meter_id,value,recorded_at")
+            .eq("meter_id", cm.id)
+            .order("recorded_at", { ascending: false })
+            .limit(1)
+            .then((res) => res.data?.[0]),
+        ),
+      );
+      for (const lr of latestChemReadings) {
+        if (lr) rows.push(lr as any);
+      }
+    }
+
     setReadings(rows);
 
     // Determine which chemical meters are currently low from the persisted,
