@@ -14,6 +14,7 @@ interface SiteMetric {
   id: string;
   name: string;
   location: string | null;
+  machine_type?: string | null;
   logo_url: string | null;
   online: boolean;
   wash_today: number;
@@ -76,7 +77,7 @@ function DashboardPage() {
 
       const { data: sitesData } = await supabase
         .from("sites")
-        .select("id, name, location, logo_url, created_at, fresh_water_daily_threshold_liters")
+        .select("id, name, location, machine_type, logo_url, created_at, fresh_water_daily_threshold_liters")
         .in("id", siteIds);
 
       if (!sitesData) {
@@ -162,6 +163,7 @@ function DashboardPage() {
           id: site.id,
           name: site.name,
           location: site.location,
+          machine_type: site.machine_type,
           logo_url: site.logo_url,
           online,
           wash_today: washToday,
@@ -246,6 +248,11 @@ function SiteCard({ site }: { site: SiteMetric }) {
               <div className="flex items-center gap-1 text-sm text-muted-foreground mt-1">
                 <MapPin className="h-3.5 w-3.5 flex-shrink-0" />
                 <span className="truncate">{site.location}</span>
+              </div>
+            )}
+            {site.machine_type && (
+              <div className="text-xs text-muted-foreground/70 mt-0.5 truncate">
+                {site.machine_type}
               </div>
             )}
           </div>

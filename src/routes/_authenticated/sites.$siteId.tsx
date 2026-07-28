@@ -48,7 +48,7 @@ interface ChemLowEvent {
 function SiteDetail() {
   const { siteId } = Route.useParams();
   const navigate = useNavigate();
-  const [site, setSite] = useState<{ name: string; location: string | null; fresh_water_daily_threshold_liters: number | null } | null>(null);
+  const [site, setSite] = useState<{ name: string; location: string | null; machine_type: string | null; fresh_water_daily_threshold_liters: number | null } | null>(null);
   const [meters, setMeters] = useState<Meter[]>([]);
   const [readings, setReadings] = useState<Reading[]>([]);
   const [totals, setTotals] = useState<Record<string, number>>({});
@@ -77,7 +77,7 @@ function SiteDetail() {
 
   const load = async () => {
     const [{ data: s }, { data: m }, { data: apiKeys }] = await Promise.all([
-      supabase.from("sites").select("name,location,fresh_water_daily_threshold_liters").eq("id", siteId).single(),
+      supabase.from("sites").select("name,location,machine_type,fresh_water_daily_threshold_liters").eq("id", siteId).single(),
       supabase
         .from("site_meters")
         .select("id,meter_type,name,unit,capacity,low_threshold,device_key,position,chemical_group")
@@ -458,6 +458,7 @@ function SiteDetail() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-foreground">{site.name}</h1>
             {site.location && <p className="text-muted-foreground mt-1">{site.location}</p>}
+            {site.machine_type && <p className="text-sm text-muted-foreground/70 mt-0.5">{site.machine_type}</p>}
           </div>
         </div>
         <div className="flex items-center gap-2">
