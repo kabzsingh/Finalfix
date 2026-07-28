@@ -111,7 +111,7 @@ function DashboardPage() {
 
         const { data: meters } = await supabase
           .from("site_meters")
-          .select("id, meter_type")
+          .select("id, meter_type, sensor_type, low_threshold")
           .eq("site_id", site.id);
 
         let washToday = 0, washTotal = 0, freshToday = 0, chemLow = 0, chemTotal = 0;
@@ -151,7 +151,14 @@ function DashboardPage() {
             freshToday += Math.max(0, latestValue - midnightValue);
           } else if (meter.meter_type === "chemical") {
             chemTotal++;
-            if (latestValue >= 1) chemLow++;
+            if (meter.sensor_type === "probe") {
+              // Probe reports liters remaining in the drum — low when it
+              // drops below the configured threshold (e.g. under 20L).
+              if (meter.low_threshold != null && latestValue < Number(meter.low_threshold)) chemLow++;
+            } else {
+              // Switch: a binary float-switch signal (>=1 means triggered/low).
+              if (latestValue >= 1) chemLow++;
+            }
           }
         });
 

@@ -765,7 +765,11 @@ function MeterRow({
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-[10px]">Float trips after ({meter.unit || "L"} used from full)</Label>
+                <Label className="text-[10px]">
+                  {isChemicalLevel && sensorType === "probe"
+                    ? `Low alert threshold (${meter.unit || "L"} remaining)`
+                    : `Float trips after (${meter.unit || "L"} used from full)`}
+                </Label>
                 <Input
                   className="h-8 text-xs"
                   type="number"

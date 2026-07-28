@@ -22,6 +22,7 @@ interface Meter {
   low_threshold: number | null;
   device_key: string;
   chemical_group: string | null;
+  sensor_type?: "switch" | "probe";
 }
 interface Reading {
   meter_id: string;
@@ -80,7 +81,7 @@ function SiteDetail() {
       supabase.from("sites").select("name,location,machine_type,fresh_water_daily_threshold_liters").eq("id", siteId).single(),
       supabase
         .from("site_meters")
-        .select("id,meter_type,name,unit,capacity,low_threshold,device_key,position,chemical_group")
+        .select("id,meter_type,name,unit,capacity,low_threshold,device_key,position,chemical_group,sensor_type")
         .eq("site_id", siteId)
         .order("position"),
       supabase.from("site_api_keys").select("last_used_at").eq("site_id", siteId).order("last_used_at", { ascending: false }).limit(1),
@@ -733,8 +734,16 @@ function SiteDetail() {
               let lowSinceLabel: string | null = null;
               let litresPerWash: number | null = null;
               let washesThisDrainCycle: number | null = null;
+              const isProbe = lvl?.sensor_type === "probe";
+              const probeReading = isProbe && lvl ? stats.latestByMeter.get(lvl.id) : undefined;
+              const litersRemaining = probeReading ? Number(probeReading.value) : null;
 
-              if (lvl) {
+              if (isProbe && lvl) {
+                // Probe reports liters remaining directly — low when it drops
+                // below the configured threshold. No event-history estimation
+                // needed since we have a live, continuous reading.
+                isLow = litersRemaining != null && lvl.low_threshold != null && litersRemaining < lvl.low_threshold;
+              } else if (lvl) {
                 // Chemical-per-wash: only meaningful over the DRAIN phase (from a
                 // refill, when the container is full, down to the moment it next
                 // trips the low sensor) — NOT the period the light stays on waiting
@@ -806,7 +815,33 @@ function SiteDetail() {
                     {g.label}
                   </div>
                   {lvl ? (
-                    isLow ? (
+                    isProbe ? (
+                      <div className={`rounded-lg border p-3 ${isLow ? "border-destructive/40 bg-destructive/10" : "border-emerald-500/30 bg-emerald-500/10"}`}>
+                        <div className="flex items-center justify-between">
+                          <div className={`text-sm font-semibold ${isLow ? "text-destructive" : "text-emerald-600 dark:text-emerald-400"}`}>
+                            {isLow ? "⚠ Chemical Low" : "✓ Chemical OK"}
+                          </div>
+                          <div className={`text-[10px] font-mono px-1 rounded ${isLow ? "text-destructive/70" : "text-emerald-600/70 dark:text-emerald-400/70"}`}>PROBE</div>
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">{lvl.name}</div>
+                        <div className="mt-3 flex items-end gap-2">
+                          <div className={`text-3xl font-bold tabular-nums ${isLow ? "text-destructive" : "text-foreground"}`}>
+                            {litersRemaining != null ? litersRemaining.toFixed(1) : "—"}
+                          </div>
+                          <div className="text-xs text-muted-foreground pb-1">
+                            {lvl.unit || "L"} remaining{lvl.capacity ? ` of ${lvl.capacity}${lvl.unit || "L"}` : ""}
+                          </div>
+                        </div>
+                        {lvl.capacity && litersRemaining != null && (
+                          <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${isLow ? "bg-destructive" : "bg-emerald-500"}`}
+                              style={{ width: `${Math.max(0, Math.min(100, (litersRemaining / lvl.capacity) * 100))}%` }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ) : isLow ? (
                       <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3">
                         <div className="flex items-center justify-between">
                           <div className="text-sm font-semibold text-destructive">⚠ Chemical Low</div>
