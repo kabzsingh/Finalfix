@@ -299,7 +299,7 @@ function SiteCard({ site }: { site: SiteMetric }) {
                 <TrendingUp className="h-4 w-4 text-cyan-400" />
                 <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Total Wash Counts</span>
               </div>
-              <div className="text-2xl font-bold text-foreground">{Math.round(site.wash_total).toLocaleString()}</div>
+              <div className="text-2xl font-bold text-foreground">{Math.round(site.wash_total)}</div>
               <div className="text-xs text-muted-foreground mt-1">washes</div>
             </div>
 
@@ -326,7 +326,7 @@ function SiteCard({ site }: { site: SiteMetric }) {
                 </span>
               </div>
               <div className={`text-2xl font-bold ${site.fresh_water_alert ? "text-red-300" : "text-foreground"}`}>
-                {Math.round(site.fresh_today).toLocaleString()}
+                {Math.round(site.fresh_today)}
               </div>
               <div className={`text-xs mt-1 ${site.fresh_water_alert ? "text-red-300/80" : "text-cyan-400"}`}>
                 {site.is_new_today ? "liters since setup" : "liters"}
@@ -339,7 +339,7 @@ function SiteCard({ site }: { site: SiteMetric }) {
                 <Droplets className="h-4 w-4 text-cyan-400" />
                 <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Total Fresh Water</span>
               </div>
-              <div className="text-2xl font-bold text-foreground">{Math.round(site.fresh_total).toLocaleString()}</div>
+              <div className="text-2xl font-bold text-foreground">{Math.round(site.fresh_total)}</div>
               <div className="text-xs text-muted-foreground mt-1">liters</div>
             </div>
 
