@@ -62,6 +62,11 @@ function SiteDetail() {
   // ADD these two new state lines + ref just below chemLowEvents:
   const [dayBaseline, setDayBaseline] = useState<Record<string, number>>({});
   const [washAtLow, setWashAtLow] = useState<Record<string, number>>({});
+  // Holds the last known good "washes since low" value per meter, so a
+  // momentary gap in the data (e.g. mid-render, mid-refresh) never displays
+  // as a flash of "0" — it just keeps showing the last real number until a
+  // fresh one arrives.
+  const lastKnownWashesSinceLowRef = useRef<Record<string, number>>({});
   const [washTrendData, setWashTrendData] = useState<{ time: string; washes: number }[]>([]);
   const [waterTrendData, setWaterTrendData] = useState<{ time: string; liters: number }[]>([]);
   const [chemicalFillHistory, setChemicalFillHistory] = useState<{ meter_id: string; went_low_at: string; topped_up_at: string | null; wash_count_at_low: number | null; wash_count_at_topup: number | null; washes_during_low: number | null }[]>([]);
@@ -734,8 +739,11 @@ function SiteDetail() {
                 isLow = !!lowEvent;
 
                 const latestCounterReading = stats.latestByMeter.get(lvl.id);
-                const counterValue = latestCounterReading ? Number(latestCounterReading.value) : 0;
+                const counterValue = latestCounterReading
+                  ? Number(latestCounterReading.value)
+                  : lastKnownWashesSinceLowRef.current[lvl.id] ?? 0;
                 washesSinceLow = isLow ? counterValue : null;
+                if (isLow && latestCounterReading) lastKnownWashesSinceLowRef.current[lvl.id] = counterValue;
 
                 if (isLow && lowEvent) {
                   const lowDelta = Math.floor((now - new Date(lowEvent.low_since).getTime()) / 1000);
@@ -800,7 +808,8 @@ function SiteDetail() {
                   washesSinceLow =
                     washCountAtLow !== undefined && washCountAtLow !== null && currentWashTotal !== undefined
                       ? Number(currentWashTotal) - Number(washCountAtLow)
-                      : null;
+                      : lastKnownWashesSinceLowRef.current[lvl.id] ?? null;
+                  if (washesSinceLow !== null) lastKnownWashesSinceLowRef.current[lvl.id] = washesSinceLow;
 
                   const lowDelta = Math.floor((now - new Date(lowEvent.low_since).getTime()) / 1000);
                   lowSinceLabel = lowDelta < 60 ? "just now"
