@@ -34,6 +34,7 @@ interface Site {
   secondary_color?: string;
   accent_color?: string;
   fresh_water_daily_threshold_liters?: number | null;
+  machine_type?: string | null;
 }
 interface Meter { id: string; site_id: string; meter_type: "wash"|"fresh_water"|"chemical"|"chemical_flow"; name: string; unit: string; capacity: number | null; low_threshold: number | null; device_key: string; position: number; chemical_group: string | null; modbus_address: number | null }
 interface ApiKeyRow { id: string; site_id: string; key_prefix: string; label: string | null; revoked: boolean; last_used_at: string | null; created_at: string }
@@ -283,14 +284,14 @@ scripts/setup-admin.sql`}
     return true;
   };
 
-  const updateSiteDetails = async (siteId: string, details: { name: string; location: string | null }): Promise<boolean> => {
+  const updateSiteDetails = async (siteId: string, details: { name: string; location: string | null; machine_type: string | null }): Promise<boolean> => {
     if (!details.name.trim()) {
       toast.error("Site name is required");
       return false;
     }
     const { error } = await supabase
       .from("sites")
-      .update({ name: details.name.trim(), location: details.location?.trim() || null })
+      .update({ name: details.name.trim(), location: details.location?.trim() || null, machine_type: details.machine_type?.trim() || null })
       .eq("id", siteId);
     if (error) {
       toast.error(error.message);
@@ -777,7 +778,7 @@ function SiteAdminCard({
   onRevokeKey: (id: string) => void;
   onGenerateSketch: () => void;
   onUpdateBranding: (branding: { primary_color: string; secondary_color: string; accent_color: string; logo_url: string | null; background_url: string | null }) => Promise<boolean>;
-  onUpdateSiteDetails: (details: { name: string; location: string | null }) => Promise<boolean>;
+  onUpdateSiteDetails: (details: { name: string; location: string | null; machine_type: string | null }) => Promise<boolean>;
 }) {
   const [type, setType] = useState<Meter["meter_type"]>("chemical");
   const [name, setName] = useState("");
@@ -790,11 +791,12 @@ function SiteAdminCard({
   const [editingDetails, setEditingDetails] = useState(false);
   const [editName, setEditName] = useState(site.name);
   const [editLocation, setEditLocation] = useState(site.location ?? "");
+  const [editMachineType, setEditMachineType] = useState(site.machine_type ?? "");
   const [savingDetails, setSavingDetails] = useState(false);
 
   const saveSiteDetails = async () => {
     setSavingDetails(true);
-    const ok = await onUpdateSiteDetails({ name: editName, location: editLocation || null });
+    const ok = await onUpdateSiteDetails({ name: editName, location: editLocation || null, machine_type: editMachineType || null });
     setSavingDetails(false);
     if (ok) setEditingDetails(false);
   };
@@ -802,6 +804,7 @@ function SiteAdminCard({
   const cancelEditDetails = () => {
     setEditName(site.name);
     setEditLocation(site.location ?? "");
+    setEditMachineType(site.machine_type ?? "");
     setEditingDetails(false);
   };
   // No branding customization - original simple setup
@@ -814,7 +817,7 @@ function SiteAdminCard({
             {site.name.charAt(0)}
           </div>
           {editingDetails ? (
-            <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-3 gap-2">
               <Input
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
@@ -827,15 +830,27 @@ function SiteAdminCard({
                 placeholder="Location / Address"
                 className="h-8 text-sm"
               />
+              <Input
+                value={editMachineType}
+                onChange={(e) => setEditMachineType(e.target.value)}
+                placeholder="Machine type (e.g. Delta DOP-107EV)"
+                className="h-8 text-sm"
+              />
             </div>
           ) : (
             <div className="min-w-0">
               <h3 className="font-bold text-lg leading-tight truncate">{site.name}</h3>
-              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mt-0.5 uppercase tracking-wider font-medium">
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mt-0.5 uppercase tracking-wider font-medium flex-wrap">
                 <Cpu className="h-3 w-3" />
                 {site.location || "Remote Site"}
                 <span className="mx-1 opacity-30">•</span>
                 {meters.length} Sensor{meters.length === 1 ? "" : "s"}
+                {site.machine_type && (
+                  <>
+                    <span className="mx-1 opacity-30">•</span>
+                    {site.machine_type}
+                  </>
+                )}
               </div>
             </div>
           )}
