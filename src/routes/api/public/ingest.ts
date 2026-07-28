@@ -70,7 +70,7 @@ export const Route = createFileRoute("/api/public/ingest")({
         if (!parsed.success) return json({ error: "Invalid payload", issues: parsed.error.flatten() }, 400);
 
         const meters = await getMetersForSite(db, keyRow.site_id);
-        const map = new Map(meters.map((m) => [m.device_key, { id: m.id, type: m.meter_type }]));
+        const map = new Map(meters.map((m) => [m.device_key, { id: m.id, type: m.meter_type, sensorType: (m as any).sensor_type }]));
 
         // Separate readings by type
         const readings: any[] = [];
@@ -84,14 +84,34 @@ export const Route = createFileRoute("/api/public/ingest")({
             continue; 
           }
 
-          // Chemical level reading (0=full, 1=low)
-          if (r.type === 'level') {
+          // A meter configured as a switch-type chemical is ALWAYS a level/state
+          // reading, regardless of what the payload's own "type" field says.
+          // The ESP32 firmware sends plain {device_key, value} with no "type" at
+          // all, which defaults to 'total' — so relying solely on r.type === 'level'
+          // meant real hardware never triggered chemical low-tracking at all.
+          // Probe-type chemicals are excluded here since they report a continuous
+          // liters-remaining value, not a binary state, and are stored as regular
+          // readings like any other meter.
+          const isSwitchChemical = meterInfo.type === "chemical" && meterInfo.sensorType !== "probe";
+
+          if (r.type === 'level' || isSwitchChemical) {
             chemicalReadings.push({
               device_key: r.device_key,
               meter_id: meterInfo.id,
               site_id: keyRow.site_id,
               state: Math.round(r.value), // 0 or 1
               recorded_at: r.recorded_at || new Date().toISOString(),
+            });
+            // Also record it as a regular reading — the dashboard's simple
+            // "latest value >= 1 means low" check reads from the readings
+            // table directly, so this needs to land there too, not just
+            // feed the separate low-event-tracking system above.
+            readings.push({
+              site_id: keyRow.site_id,
+              meter_id: meterInfo.id,
+              value: r.value,
+              reading_type: 'total',
+              ...(r.recorded_at ? { recorded_at: r.recorded_at } : {}),
             });
             continue;
           }
