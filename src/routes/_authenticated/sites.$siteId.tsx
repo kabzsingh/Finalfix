@@ -499,10 +499,10 @@ function SiteDetail() {
         <div className="bg-muted rounded-lg p-6 border border-border">
           <div className="flex items-center gap-2 mb-2">
             <Activity className="h-5 w-5 text-muted-foreground" />
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Lifetime</span>
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Total Wash Counts</span>
           </div>
-          <div className="text-3xl font-bold text-foreground">{(stats.washLifetime / 1000).toFixed(1)}k</div>
-          <div className="text-sm text-muted-foreground mt-2">total washes</div>
+          <div className="text-3xl font-bold text-foreground">{Math.round(stats.washLifetime)}</div>
+          <div className="text-sm text-muted-foreground mt-2">washes</div>
         </div>
 
         <div
@@ -528,7 +528,7 @@ function SiteDetail() {
                   : "text-muted-foreground"
               }`}
             >
-              Water Today
+              Fresh Water Usage Today
               {site?.fresh_water_daily_threshold_liters != null &&
                 stats.freshToday > Number(site.fresh_water_daily_threshold_liters) &&
                 " – High Usage"}
@@ -542,7 +542,7 @@ function SiteDetail() {
                 : "text-primary"
             }`}
           >
-            {stats.freshToday.toFixed(0)}
+            {Math.round(stats.freshToday)}
           </div>
           <div
             className={`text-sm mt-2 ${
@@ -561,9 +561,9 @@ function SiteDetail() {
         <div className="bg-primary/10 rounded-lg p-6 border border-primary/20">
           <div className="flex items-center gap-2 mb-2">
             <Droplets className="h-5 w-5 text-primary" />
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Water Total</span>
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Total Fresh Water</span>
           </div>
-          <div className="text-3xl font-bold text-primary">{(stats.freshLifetime / 1000).toFixed(1)}k</div>
+          <div className="text-3xl font-bold text-primary">{Math.round(stats.freshLifetime)}</div>
           <div className="text-sm text-primary mt-2">liters</div>
         </div>
 
