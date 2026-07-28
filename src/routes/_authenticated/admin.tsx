@@ -36,7 +36,7 @@ interface Site {
   fresh_water_daily_threshold_liters?: number | null;
   machine_type?: string | null;
 }
-interface Meter { id: string; site_id: string; meter_type: "wash"|"fresh_water"|"chemical"|"chemical_flow"; name: string; unit: string; capacity: number | null; low_threshold: number | null; device_key: string; position: number; chemical_group: string | null; modbus_address: number | null }
+interface Meter { id: string; site_id: string; meter_type: "wash"|"fresh_water"|"chemical"|"chemical_flow"; name: string; unit: string; capacity: number | null; low_threshold: number | null; device_key: string; position: number; chemical_group: string | null; modbus_address: number | null; sensor_type: "switch" | "probe" }
 interface ApiKeyRow { id: string; site_id: string; key_prefix: string; label: string | null; revoked: boolean; last_used_at: string | null; created_at: string }
 
 const SETUP_SQL_HINT =
@@ -224,6 +224,7 @@ scripts/setup-admin.sql`}
         device_key: deviceKey,
         chemical_group: m.chemical_group?.trim() || null,
         modbus_address: m.modbus_address ?? null,
+        sensor_type: m.sensor_type ?? "switch",
         position: meters.filter((x) => x.site_id === siteId).length,
       });
       if (error) {
@@ -239,10 +240,11 @@ scripts/setup-admin.sql`}
     }
   };
 
-  const updateMeter = async (id: string, updates: { capacity: number | null; low_threshold: number | null; modbus_address?: number | null }): Promise<boolean> => {
+  const updateMeter = async (id: string, updates: { capacity: number | null; low_threshold: number | null; modbus_address?: number | null; sensor_type?: "switch" | "probe" }): Promise<boolean> => {
     try {
       const payload: any = { capacity: updates.capacity, low_threshold: updates.low_threshold };
       if (updates.modbus_address !== undefined) payload.modbus_address = updates.modbus_address;
+      if (updates.sensor_type !== undefined) payload.sensor_type = updates.sensor_type;
       const { error } = await supabase.from("site_meters")
         .update(payload)
         .eq("id", id);
@@ -656,15 +658,17 @@ function MeterRow({
   meter, onUpdateMeter, onRemoveMeter,
 }: {
   meter: Meter;
-  onUpdateMeter: (id: string, updates: { capacity: number | null; low_threshold: number | null; modbus_address?: number | null }) => Promise<boolean>;
+  onUpdateMeter: (id: string, updates: { capacity: number | null; low_threshold: number | null; modbus_address?: number | null; sensor_type?: "switch" | "probe" }) => Promise<boolean>;
   onRemoveMeter: (id: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [capacity, setCapacity] = useState(meter.capacity != null ? String(meter.capacity) : "");
   const [lowThreshold, setLowThreshold] = useState(meter.low_threshold != null ? String(meter.low_threshold) : "");
   const [modbusAddress, setModbusAddress] = useState(meter.modbus_address != null ? String(meter.modbus_address) : "");
+  const [sensorType, setSensorType] = useState<"switch" | "probe">(meter.sensor_type ?? "switch");
   const [saving, setSaving] = useState(false);
   const isChemical = meter.meter_type === "chemical" || meter.meter_type === "chemical_flow";
+  const isChemicalLevel = meter.meter_type === "chemical";
 
   const handleSave = async () => {
     setSaving(true);
@@ -672,6 +676,7 @@ function MeterRow({
       capacity: capacity.trim() ? Number(capacity) : null,
       low_threshold: lowThreshold.trim() ? Number(lowThreshold) : null,
       modbus_address: modbusAddress.trim() ? Number(modbusAddress) : null,
+      sensor_type: isChemicalLevel ? sensorType : undefined,
     });
     setSaving(false);
     if (ok) setEditing(false);
@@ -692,6 +697,11 @@ function MeterRow({
               {meter.chemical_group && (
                 <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-500 font-bold border border-indigo-500/10">
                   GRP: {meter.chemical_group}
+                </span>
+              )}
+              {isChemicalLevel && !editing && (
+                <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold border ${meter.sensor_type === "probe" ? "bg-cyan-500/10 text-cyan-500 border-cyan-500/10" : "bg-muted text-muted-foreground/70 border-border"}`}>
+                  {meter.sensor_type === "probe" ? "PROBE" : "SWITCH"}
                 </span>
               )}
               {!editing && meter.capacity != null && (
@@ -732,6 +742,18 @@ function MeterRow({
           </div>
           {isChemical && (
             <>
+              {isChemicalLevel && (
+                <div className="space-y-1">
+                  <Label className="text-[10px]">Sensor Type</Label>
+                  <Select value={sensorType} onValueChange={(v) => setSensorType(v as "switch" | "probe")}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="switch">Switch (float — low/ok only)</SelectItem>
+                      <SelectItem value="probe">Probe (continuous level reading)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="space-y-1">
                 <Label className="text-[10px]">Total drum capacity ({meter.unit || "L"})</Label>
                 <Input
@@ -772,7 +794,7 @@ function SiteAdminCard({
   site: Site; meters: Meter[]; keys: ApiKeyRow[];
   onRemoveSite: () => void;
   onAddMeter: (m: Partial<Meter>) => Promise<boolean>;
-  onUpdateMeter: (id: string, updates: { capacity: number | null; low_threshold: number | null; modbus_address?: number | null }) => Promise<boolean>;
+  onUpdateMeter: (id: string, updates: { capacity: number | null; low_threshold: number | null; modbus_address?: number | null; sensor_type?: "switch" | "probe" }) => Promise<boolean>;
   onRemoveMeter: (id: string) => void;
   onGenerateKey: () => void;
   onRevokeKey: (id: string) => void;
@@ -788,6 +810,7 @@ function SiteAdminCard({
   const [capacity, setCapacity] = useState("");
   const [low, setLow] = useState("");
   const [group, setGroup] = useState("");
+  const [sensorType, setSensorType] = useState<"switch" | "probe">("switch");
   const [editingDetails, setEditingDetails] = useState(false);
   const [editName, setEditName] = useState(site.name);
   const [editLocation, setEditLocation] = useState(site.location ?? "");
@@ -940,6 +963,18 @@ function SiteAdminCard({
             </div>
 
             <div className="mt-3 flex flex-col md:flex-row gap-3 items-end">
+              {type === "chemical" && (
+                <div className="flex-1 space-y-1 w-full">
+                  <Label className="text-[10px]">Sensor Type</Label>
+                  <Select value={sensorType} onValueChange={(v) => setSensorType(v as "switch" | "probe")}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="switch">Switch (float — low/ok only)</SelectItem>
+                      <SelectItem value="probe">Probe (continuous level reading)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               {(type === "chemical" || type === "chemical_flow") && (
                 <div className="flex-1 space-y-1 w-full">
                   <Label className="text-[10px]">Chemical Grouping (optional)</Label>
@@ -959,9 +994,10 @@ function SiteAdminCard({
                     capacity: capacity ? Number(capacity) : null,
                     low_threshold: low ? Number(low) : null,
                     chemical_group: group.trim() || null,
+                    sensor_type: type === "chemical" ? sensorType : "switch",
                   });
                   if (!ok) return;
-                  setName(""); setDeviceKey(""); setModbusAddress(""); setCapacity(""); setLow(""); setGroup("");
+                  setName(""); setDeviceKey(""); setModbusAddress(""); setCapacity(""); setLow(""); setGroup(""); setSensorType("switch");
                 }}
               ><Plus className="h-3.5 w-3.5 mr-1" /> Add Sensor</Button>
             </div>
