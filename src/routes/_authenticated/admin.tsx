@@ -1428,6 +1428,7 @@ unsigned long lastPollMs = 0;
 int pollsSinceSocketOpen = 0;
 unsigned long wifiRetryDelay = WIFI_RETRY_BASE_MS;
 unsigned long lastWifiAttemptMs = 0;
+bool spiffsAvailable = false; // set in setup(); guards all offline-queue file access
 
 // ===== Modbus register map =====
 // modbusAddr is already 0-based (mapping table address minus 1).
@@ -1450,7 +1451,11 @@ uint32_t combineWords(uint16_t lo, uint16_t hi) {
 }
 
 // ===== SPIFFS helpers (offline-buffering pattern) =====
+// All guarded by spiffsAvailable — if SPIFFS failed to mount in setup(),
+// these become no-ops and loop() falls back to sending readings live
+// instead of queuing them (see loop() below).
 void appendToQueue(uint32_t values[], bool ok[], int count) {
+  if (!spiffsAvailable) return;
   File f = SPIFFS.open(QUEUE_FILE, FILE_APPEND);
   if (!f) { Serial.println("Failed to open queue"); return; }
   f.print("{");
@@ -1463,6 +1468,7 @@ void appendToQueue(uint32_t values[], bool ok[], int count) {
 }
 
 int countQueueLines() {
+  if (!spiffsAvailable) return 0;
   File f = SPIFFS.open(QUEUE_FILE, FILE_READ);
   if (!f) return 0;
   int c = 0;
@@ -1472,6 +1478,7 @@ int countQueueLines() {
 }
 
 void removeFirstLines(int n) {
+  if (!spiffsAvailable) return;
   File src = SPIFFS.open(QUEUE_FILE, FILE_READ);
   File tmp = SPIFFS.open("/tmp.jsonl", FILE_WRITE);
   if (!src || !tmp) return;
@@ -1484,6 +1491,21 @@ void removeFirstLines(int n) {
   src.close(); tmp.close();
   SPIFFS.remove(QUEUE_FILE);
   SPIFFS.rename("/tmp.jsonl", QUEUE_FILE);
+}
+
+// Builds the ingest JSON payload directly from live meter readings (used
+// when SPIFFS isn't available, bypassing the on-disk queue entirely).
+String buildPayloadFromLive(uint32_t values[], bool ok[]) {
+  String payload = "{\\"readings\\":[";
+  bool first = true;
+  for (int i = 0; i < NUM_METERS; i++) {
+    if (!ok[i]) continue;
+    if (!first) payload += ",";
+    payload += "{\\"device_key\\":\\"" + String(meters[i].deviceKey) + "\\",\\"value\\":" + String(values[i]) + "}";
+    first = false;
+  }
+  payload += "]}";
+  return payload;
 }
 
 // ===== WiFi with backoff =====
@@ -1538,6 +1560,7 @@ bool postPayload(const String& payload) {
 }
 
 void flushQueue() {
+  if (!spiffsAvailable) return;
   File f = SPIFFS.open(QUEUE_FILE, FILE_READ);
   if (!f || f.size() == 0) { if (f) f.close(); return; }
   int sent = 0;
@@ -1727,16 +1750,54 @@ void setup() {
   delay(500);
 
   // Hardware watchdog: reboot automatically if the loop ever stalls.
+  //
+  // NOTE: newer Arduino-ESP32 cores (3.x, ESP-IDF 5.x) already auto-init the
+  // Task Watchdog Timer for the idle tasks before setup() ever runs. Calling
+  // esp_task_wdt_init() again on top of that returns ESP_ERR_INVALID_STATE
+  // ("TWDT already initialized") — reconfigure the existing one instead of
+  // treating that as a fatal error.
   esp_task_wdt_config_t wdtConfig = {
     .timeout_ms = WDT_TIMEOUT_S * 1000,
     .idle_core_mask = 0,
     .trigger_panic = true
   };
-  esp_task_wdt_init(&wdtConfig);
-  esp_task_wdt_add(NULL);
+  esp_err_t wdtInitErr = esp_task_wdt_init(&wdtConfig);
+  if (wdtInitErr == ESP_ERR_INVALID_STATE) {
+    esp_task_wdt_reconfigure(&wdtConfig);
+  } else if (wdtInitErr != ESP_OK) {
+    Serial.printf("WDT init returned %d (continuing)\\n", wdtInitErr);
+  }
+  esp_err_t wdtAddErr = esp_task_wdt_add(NULL);
+  if (wdtAddErr != ESP_OK && wdtAddErr != ESP_ERR_INVALID_ARG) {
+    Serial.printf("WDT add returned %d (continuing)\\n", wdtAddErr);
+  }
 
-  if (!SPIFFS.begin(true)) Serial.println("SPIFFS mount failed!");
-  else Serial.printf("SPIFFS OK — %u bytes free\\n", SPIFFS.totalBytes() - SPIFFS.usedBytes());
+  // SPIFFS mount, with an explicit format-and-retry if the first mount
+  // fails (error -10025 / SPIFFS_ERR_NOT_A_FS means the flash region isn't
+  // a valid filesystem yet — first boot on a fresh chip, or the previous
+  // partition table used a different filesystem there).
+  //
+  // If SPIFFS still isn't available after that (e.g. the board's Partition
+  // Scheme in Tools menu doesn't actually allocate a SPIFFS partition), the
+  // device keeps running WITHOUT the offline queue: readings are sent live
+  // each cycle and simply dropped (not buffered) if the network is down,
+  // rather than the whole device being non-functional.
+  if (SPIFFS.begin(true)) {
+    spiffsAvailable = true;
+  } else {
+    Serial.println("SPIFFS mount failed, formatting...");
+    if (SPIFFS.format() && SPIFFS.begin(true)) {
+      spiffsAvailable = true;
+      Serial.println("SPIFFS formatted and mounted OK");
+    } else {
+      spiffsAvailable = false;
+      Serial.println("SPIFFS unavailable — running WITHOUT offline queue buffering.");
+      Serial.println("Check Tools > Partition Scheme in Arduino IDE: pick a scheme that includes a SPIFFS partition (e.g. 'Default 4MB with spiffs').");
+    }
+  }
+  if (spiffsAvailable) {
+    Serial.printf("SPIFFS OK — %u bytes free\\n", SPIFFS.totalBytes() - SPIFFS.usedBytes());
+  }
 
   connectWifi();
 }
@@ -1753,9 +1814,21 @@ void loop() {
     uint32_t values[NUM_METERS];
     bool ok[NUM_METERS];
     readAllMeters(values, ok); // fills what it can; failed reads are marked not-ok
-    if (countQueueLines() >= MAX_FILE_LINES) removeFirstLines(100);
-    appendToQueue(values, ok, NUM_METERS);
-    flushQueue();
+
+    if (spiffsAvailable) {
+      if (countQueueLines() >= MAX_FILE_LINES) removeFirstLines(100);
+      appendToQueue(values, ok, NUM_METERS);
+      flushQueue();
+    } else {
+      // No offline buffering available this boot — send directly. If this
+      // fails (WiFi/API down), this cycle's reading is simply skipped
+      // rather than queued, since there's nowhere to persist it.
+      bool anyOk = false;
+      for (int i = 0; i < NUM_METERS; i++) if (ok[i]) { anyOk = true; break; }
+      if (anyOk && WiFi.status() == WL_CONNECTED) {
+        postPayload(buildPayloadFromLive(values, ok));
+      }
+    }
   }
 
   delay(10);
