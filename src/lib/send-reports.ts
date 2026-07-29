@@ -1,6 +1,7 @@
 import { getSupabaseAdmin, type Env } from "@/lib/supabase";
 import { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
+import * as XLSX from "xlsx";
 
 type Client = SupabaseClient<Database>;
 
@@ -8,7 +9,7 @@ async function sendEmail(
   to: string[],
   subject: string,
   text: string,
-  attachment: { filename: string; mime: string; content: string },
+  attachment: { filename: string; mime: string; contentBase64: string },
   sendgridApiKey: string,
   fromEmail: string,
   fromName: string,
@@ -27,7 +28,7 @@ async function sendEmail(
       attachments: [
         {
           filename: attachment.filename,
-          content: btoa(attachment.content),
+          content: attachment.contentBase64,
           type: attachment.mime,
         },
       ],
@@ -58,11 +59,6 @@ function ymdInTz(tz: string, instant: Date) {
   return nowInTz(tz, instant).ymd;
 }
 
-function escapeCsv(v: any) {
-  const s = v == null ? "" : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
 async function fetchHourlyAgg(db: Client, siteId: string, fromIso: string, toIso: string) {
   const { data, error } = await db.rpc("report_hourly_agg", { _site_id: siteId, _from: fromIso, _to: toIso });
   if (error) throw new Error(error.message);
@@ -73,6 +69,23 @@ async function fetchDailyAgg(db: Client, siteId: string, fromIso: string, toIso:
   const { data, error } = await db.rpc("report_daily_agg", { _site_id: siteId, _from: fromIso, _to: toIso, _tz: tz });
   if (error) throw new Error(error.message);
   return (data ?? []) as { meter_id: string; day_bucket: string; sum_value: number; count_value: number; last_value: number }[];
+}
+
+function addAggSheet(workbook: XLSX.WorkBook, sheetName: string, rows: (string | number)[][]) {
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const colCount = rows.reduce((max, r) => Math.max(max, r.length), 0);
+  const widths: { wch: number }[] = [];
+  for (let c = 0; c < colCount; c++) {
+    let maxLen = 8;
+    for (const row of rows) {
+      const cell = row[c];
+      if (cell != null) maxLen = Math.max(maxLen, String(cell).length);
+    }
+    widths.push({ wch: Math.min(maxLen + 2, 45) });
+  }
+  ws["!cols"] = widths;
+  const safeName = sheetName.replace(/[\[\]:*?/\\]/g, "").slice(0, 31);
+  XLSX.utils.book_append_sheet(workbook, ws, safeName);
 }
 
 async function buildDailyReport(db: Client, site: any, meters: any[]) {
@@ -92,25 +105,33 @@ async function buildDailyReport(db: Client, site: any, meters: any[]) {
     buckets.get(hourKey)!.set(row.meter_id, { sum: Number(row.sum_value), count: Number(row.count_value), last: Number(row.last_value) });
   }
   const hours = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, "0")}:00`);
-  const header = ["hour", ...meters.map((m) => `${m.name} (${m.unit || m.meter_type})`)];
-  const lines = [header.map(escapeCsv).join(",")];
+  const header: (string | number)[] = ["hour", ...meters.map((m) => `${m.name} (${m.unit || m.meter_type})`)];
+  const rows: (string | number)[][] = [header];
   for (const h of hours) {
-    const row: any[] = [h];
+    const row: (string | number)[] = [h];
     for (const meter of meters) {
       const agg = buckets.get(h)?.get(meter.id);
       if (meter.meter_type === "wash") row.push(agg?.count ?? 0);
-      else if (meter.meter_type === "fresh_water") row.push((agg?.sum ?? 0).toFixed(2));
-      else row.push(agg ? agg.last.toFixed(2) : "");
+      else if (meter.meter_type === "fresh_water") row.push(Number((agg?.sum ?? 0).toFixed(2)));
+      else row.push(agg ? Number(agg.last.toFixed(2)) : "");
     }
-    lines.push(row.map(escapeCsv).join(","));
+    rows.push(row);
   }
-  const csv = lines.join("\n");
+
+  const workbook = XLSX.utils.book_new();
+  addAggSheet(workbook, "Hourly Breakdown", rows);
+  const contentBase64 = XLSX.write(workbook, { bookType: "xlsx", type: "base64" });
+
   const safeName = site.name.replace(/[^a-z0-9]+/gi, "_");
   return {
     subject: `Daily report — ${site.name} — ${ymd}`,
-    text: `Daily report for ${site.name} — ${ymd}\n\nSee attached CSV.`,
+    text: `Daily report for ${site.name} — ${ymd}\n\nSee attached Excel file.`,
     periodKey: ymd,
-    attachment: { filename: `${safeName}_daily_${ymd}.csv`, mime: "text/csv", content: csv },
+    attachment: {
+      filename: `${safeName}_daily_${ymd}.xlsx`,
+      mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      contentBase64,
+    },
   };
 }
 
@@ -134,25 +155,33 @@ async function buildMonthlyReport(db: Client, site: any, meters: any[]) {
     map.get(d)!.set(row.meter_id, { sum: Number(row.sum_value), count: Number(row.count_value), last: Number(row.last_value) });
   }
   const sortedDays = Array.from(days).sort();
-  const header = ["date", ...meters.map((m) => `${m.name} (${m.unit || m.meter_type})`)];
-  const lines = [header.map(escapeCsv).join(",")];
+  const header: (string | number)[] = ["date", ...meters.map((m) => `${m.name} (${m.unit || m.meter_type})`)];
+  const rows: (string | number)[][] = [header];
   for (const d of sortedDays) {
-    const row: any[] = [d];
+    const row: (string | number)[] = [d];
     for (const meter of meters) {
       const agg = map.get(d)?.get(meter.id);
       if (meter.meter_type === "wash") row.push(agg?.count ?? 0);
-      else if (meter.meter_type === "fresh_water") row.push((agg?.sum ?? 0).toFixed(2));
-      else row.push(agg ? agg.last.toFixed(2) : "");
+      else if (meter.meter_type === "fresh_water") row.push(Number((agg?.sum ?? 0).toFixed(2)));
+      else row.push(agg ? Number(agg.last.toFixed(2)) : "");
     }
-    lines.push(row.map(escapeCsv).join(","));
+    rows.push(row);
   }
-  const csv = lines.join("\n");
+
+  const workbook = XLSX.utils.book_new();
+  addAggSheet(workbook, "Daily Breakdown", rows);
+  const contentBase64 = XLSX.write(workbook, { bookType: "xlsx", type: "base64" });
+
   const safeName = site.name.replace(/[^a-z0-9]+/gi, "_");
   return {
     subject: `Monthly report — ${site.name} — ${ym}`,
-    text: `Monthly report for ${site.name} — ${ym}\n\nSee attached CSV.`,
+    text: `Monthly report for ${site.name} — ${ym}\n\nSee attached Excel file.`,
     periodKey: ym,
-    attachment: { filename: `${safeName}_monthly_${ym}.csv`, mime: "text/csv", content: csv },
+    attachment: {
+      filename: `${safeName}_monthly_${ym}.xlsx`,
+      mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      contentBase64,
+    },
   };
 }
 
