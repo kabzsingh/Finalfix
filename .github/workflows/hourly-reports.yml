@@ -1,0 +1,32 @@
+name: Hourly Report Trigger
+
+# Bypasses Cloudflare's Cron Trigger entirely — that trigger is configured
+# correctly on Cloudflare's side (confirmed via dashboard) but has never
+# actually fired even once (confirmed via a diagnostic heartbeat table in
+# Supabase, still empty after multiple redeploys). Rather than continuing
+# to chase down why Cloudflare isn't invoking it, GitHub Actions' own
+# scheduler calls the exact same endpoint every hour instead — the same
+# endpoint already confirmed to work correctly when triggered manually.
+
+on:
+  schedule:
+    # Runs at the top of every hour. The endpoint itself checks each site's
+    # configured report_hour/timezone internally — this just needs to fire
+    # once an hour, same as the (non-functional) Cloudflare cron was meant to.
+    - cron: "0 * * * *"
+  workflow_dispatch: {} # allows manually running this from the Actions tab too
+
+jobs:
+  trigger-reports:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call send-reports endpoint
+        run: |
+          response=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST \
+            "https://auto.washdashboard.workers.dev/api/public/hooks/send-reports")
+          echo "$response"
+          status=$(echo "$response" | grep -o 'HTTP_STATUS:[0-9]*' | cut -d: -f2)
+          if [ "$status" -ge 400 ]; then
+            echo "::error::send-reports returned HTTP $status"
+            exit 1
+          fi
