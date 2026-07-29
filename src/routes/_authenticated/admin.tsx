@@ -375,24 +375,48 @@ scripts/setup-admin.sql`}
           </div>
         </div>
 
+        {sites.length > 1 && (
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 shadow-sm">
+            <Label className="text-xs font-semibold text-muted-foreground shrink-0">Jump to site</Label>
+            <Select
+              onValueChange={(siteId) => {
+                const el = document.getElementById(`site-card-${siteId}`);
+                if (el) {
+                  el.scrollIntoView({ behavior: "smooth", block: "start" });
+                  el.classList.add("ring-2", "ring-primary", "ring-offset-2", "ring-offset-background");
+                  setTimeout(() => el.classList.remove("ring-2", "ring-primary", "ring-offset-2", "ring-offset-background"), 1800);
+                }
+              }}
+            >
+              <SelectTrigger className="h-9 max-w-xs"><SelectValue placeholder="Select a site..." /></SelectTrigger>
+              <SelectContent>
+                {sites.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
         <div className="grid gap-6">
           {sites.map((site) => (
-            <SiteAdminCard
-              key={site.id}
-              site={site}
-              meters={meters.filter((m) => m.site_id === site.id)}
-              keys={keys.filter((k) => k.site_id === site.id)}
-              onRemoveSite={() => removeSite(site.id)}
-              onAddMeter={(m) => addMeter(site.id, m)}
-              onUpdateMeter={updateMeter}
-              onToggleAvgWaterMeter={toggleAvgWaterMeter}
-              onRemoveMeter={removeMeter}
-              onGenerateKey={() => handleGenKey(site.id)}
-              onRevokeKey={revokeKey}
-              onGenerateSketch={() => setSketchSite(site)}
-              onUpdateBranding={(branding) => updateBranding(site.id, branding)}
-              onUpdateSiteDetails={(details) => updateSiteDetails(site.id, details)}
-            />
+            <div key={site.id} id={`site-card-${site.id}`} className="rounded-xl transition-shadow scroll-mt-4">
+              <SiteAdminCard
+                site={site}
+                meters={meters.filter((m) => m.site_id === site.id)}
+                keys={keys.filter((k) => k.site_id === site.id)}
+                onRemoveSite={() => removeSite(site.id)}
+                onAddMeter={(m) => addMeter(site.id, m)}
+                onUpdateMeter={updateMeter}
+                onToggleAvgWaterMeter={toggleAvgWaterMeter}
+                onRemoveMeter={removeMeter}
+                onGenerateKey={() => handleGenKey(site.id)}
+                onRevokeKey={revokeKey}
+                onGenerateSketch={() => setSketchSite(site)}
+                onUpdateBranding={(branding) => updateBranding(site.id, branding)}
+                onUpdateSiteDetails={(details) => updateSiteDetails(site.id, details)}
+              />
+            </div>
           ))}
 
           {sites.length === 0 && !loading && (
