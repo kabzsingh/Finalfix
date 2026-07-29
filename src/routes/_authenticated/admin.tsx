@@ -35,6 +35,7 @@ interface Site {
   accent_color?: string;
   fresh_water_daily_threshold_liters?: number | null;
   machine_type?: string | null;
+  poll_interval_seconds?: number;
 }
 interface Meter { id: string; site_id: string; meter_type: "wash"|"fresh_water"|"chemical"|"chemical_flow"; name: string; unit: string; capacity: number | null; low_threshold: number | null; device_key: string; position: number; chemical_group: string | null; modbus_address: number | null; sensor_type: "switch" | "probe" | "counter"; count_for_avg_water: boolean }
 interface ApiKeyRow { id: string; site_id: string; key_prefix: string; label: string | null; revoked: boolean; last_used_at: string | null; created_at: string }
@@ -1087,8 +1088,70 @@ function SiteAdminCard({
         </div>
 
         <div className="pt-4 border-t border-border/60">
+          <PollIntervalSettings site={site} onSaved={() => { /* parent will refetch on next mount */ }} />
+        </div>
+
+        <div className="pt-4 border-t border-border/60">
           <ReportSettings site={site} onSaved={() => { /* parent will refetch on next mount */ }} />
         </div>
+      </div>
+    </div>
+  );
+}
+
+function PollIntervalSettings({ site, onSaved }: { site: Site; onSaved: () => void }) {
+  const [seconds, setSeconds] = useState<string>(String(site.poll_interval_seconds ?? 15));
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    const value = Number(seconds);
+    if (!seconds.trim() || Number.isNaN(value) || value < 5 || value > 3600) {
+      setSaving(false);
+      return toast.error("Enter a number of seconds between 5 and 3600");
+    }
+    const { error } = await supabase
+      .from("sites")
+      .update({ poll_interval_seconds: Math.round(value) })
+      .eq("id", site.id);
+    setSaving(false);
+    if (error) return toast.error(error.message);
+    toast.success("Poll interval saved");
+    onSaved();
+  };
+
+  return (
+    <div className="rounded-xl border border-border/50 bg-muted/20 p-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div className="flex items-center gap-3">
+          <div className="h-8 w-8 rounded bg-muted flex items-center justify-center">
+            <Cpu className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <div>
+            <h4 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">ESP32 Poll Interval</h4>
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              How often the ESP32 reads meters and sends data. Only affects sketches generated after saving — already-flashed devices need to be reflashed to pick up a change.
+            </p>
+          </div>
+        </div>
+        <Button size="sm" onClick={save} disabled={saving} className="h-8 text-xs font-bold">
+          {saving ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : null}
+          Save Interval
+        </Button>
+      </div>
+
+      <div className="max-w-xs space-y-2">
+        <Label className="text-xs font-semibold">Poll Interval (seconds)</Label>
+        <Input
+          type="number"
+          min={5}
+          max={3600}
+          className="h-9 bg-background"
+          value={seconds}
+          onChange={(e) => setSeconds(e.target.value)}
+          placeholder="e.g. 15"
+        />
+        <p className="text-[10px] text-muted-foreground/70 px-1">Default is 15 seconds. Longer intervals reduce data freshness but also reduce load on the HMI/PLC and network traffic.</p>
       </div>
     </div>
   );
@@ -1255,6 +1318,7 @@ function ReportSettings({ site, onSaved }: { site: Site; onSaved: () => void }) 
 
 function buildEsp32Sketch(site: Site, meters: Meter[]) {
   const endpoint = `${typeof window !== "undefined" ? window.location.origin : "https://your-deployment-url.com"}/api/public/ingest`;
+  const pollIntervalSeconds = site.poll_interval_seconds ?? 15;
 
   // Only meters with an HMI Modbus Address configured (in Admin > Meter &
   // Sensor Configuration) can be included in the generated sketch — that
@@ -1350,7 +1414,7 @@ const char* QUEUE_FILE   = "/queue.jsonl";
 const char* HMI_IP = "";   // TODO: ${site.name} HMI/PLC IP, e.g. "192.168.8.10"
 const int   MODBUS_PORT = 502;
 
-const unsigned long POLL_INTERVAL_MS   = 15UL * 1000UL; // how often to read + send
+const unsigned long POLL_INTERVAL_MS   = ${pollIntervalSeconds}UL * 1000UL; // how often to read + send
 const int           MAX_FILE_LINES     = 5000;
 const int           MODBUS_MAX_RETRIES = 3;              // per-register retry attempts
 const int           SOCKET_REFRESH_CYCLES = 40;           // ~10 min at 15s interval
