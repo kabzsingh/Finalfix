@@ -52,6 +52,7 @@ function AdminPage() {
   const [meters, setMeters] = useState<Meter[]>([]);
   const [keys, setKeys] = useState<ApiKeyRow[]>([]);
   const [newSiteName, setNewSiteName] = useState("");
+  const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
   const [newSiteLoc, setNewSiteLoc] = useState("");
   const [revealedKey, setRevealedKey] = useState<string | null>(null);
   const [sketchSite, setSketchSite] = useState<Site | null>(null);
@@ -377,19 +378,14 @@ scripts/setup-admin.sql`}
 
         {sites.length > 1 && (
           <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 shadow-sm">
-            <Label className="text-xs font-semibold text-muted-foreground shrink-0">Jump to site</Label>
+            <Label className="text-xs font-semibold text-muted-foreground shrink-0">Show site</Label>
             <Select
-              onValueChange={(siteId) => {
-                const el = document.getElementById(`site-card-${siteId}`);
-                if (el) {
-                  el.scrollIntoView({ behavior: "smooth", block: "start" });
-                  el.classList.add("ring-2", "ring-primary", "ring-offset-2", "ring-offset-background");
-                  setTimeout(() => el.classList.remove("ring-2", "ring-primary", "ring-offset-2", "ring-offset-background"), 1800);
-                }
-              }}
+              value={selectedSiteId ?? "__all__"}
+              onValueChange={(siteId) => setSelectedSiteId(siteId === "__all__" ? null : siteId)}
             >
               <SelectTrigger className="h-9 max-w-xs"><SelectValue placeholder="Select a site..." /></SelectTrigger>
               <SelectContent>
+                <SelectItem value="__all__">All Sites</SelectItem>
                 {sites.map((s) => (
                   <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
                 ))}
@@ -399,7 +395,9 @@ scripts/setup-admin.sql`}
         )}
 
         <div className="grid gap-6">
-          {sites.map((site) => (
+          {sites
+            .filter((site) => !selectedSiteId || site.id === selectedSiteId)
+            .map((site) => (
             <div key={site.id} id={`site-card-${site.id}`} className="rounded-xl transition-shadow scroll-mt-4">
               <SiteAdminCard
                 site={site}
