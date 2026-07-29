@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Download, Calendar, TrendingUp } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 export const Route = createFileRoute("/_authenticated/sites/$siteId_/reports")({
   component: SiteReportsPage,
@@ -127,13 +128,13 @@ function SiteReportsPage() {
         startDate.setHours(0, 0, 0, 0);
         endDate = new Date(reportDate);
         endDate.setHours(23, 59, 59, 999);
-        fileName = `${siteName}_Daily_Report_${selectedDate}.csv`;
+        fileName = `${siteName}_Daily_Report_${selectedDate}.xlsx`;
       } else {
         // Monthly: first day to last day
         startDate = new Date(reportDate.getFullYear(), reportDate.getMonth(), 1);
         endDate = new Date(reportDate.getFullYear(), reportDate.getMonth() + 1, 0);
         endDate.setHours(23, 59, 59, 999);
-        fileName = `${siteName}_Monthly_Report_${reportDate.getFullYear()}-${String(reportDate.getMonth() + 1).padStart(2, "0")}.csv`;
+        fileName = `${siteName}_Monthly_Report_${reportDate.getFullYear()}-${String(reportDate.getMonth() + 1).padStart(2, "0")}.xlsx`;
       }
 
       const { data: meters } = await supabase
@@ -148,38 +149,45 @@ function SiteReportsPage() {
         .gte("went_low_at", startDate.toISOString())
         .lte("went_low_at", endDate.toISOString());
 
-      // Build CSV
-      let csv = `Wash Dashboard Report - ${siteName}\n`;
-      csv += `Report Type: ${reportType === "daily" ? "Daily" : "Monthly"}\n`;
-      csv += `Period: ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}\n`;
-      csv += `Generated: ${new Date().toLocaleString()}\n\n`;
+      const workbook = XLSX.utils.book_new();
+      const infoRows: (string | number)[][] = [
+        [`Wash Dashboard Report - ${siteName}`],
+        [`Report Type: ${reportType === "daily" ? "Daily" : "Monthly"}`],
+        [`Period: ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`],
+        [`Generated: ${new Date().toLocaleString()}`],
+      ];
 
       if (reportType === "daily") {
         // A day's worth of readings is bounded (~30-40k rows for a busy site),
         // so a parallel paginated fetch is fine here.
         const readings = await fetchAllReadings(siteId, startDate.toISOString(), endDate.toISOString());
-        csv += buildHourlyDailyCsv(meters || [], readings, startDate);
+        const { breakdown, summary } = buildHourlyDailySheet(meters || [], readings, startDate);
+        addSheet(workbook, "Hourly Breakdown", [...infoRows, [], ...breakdown]);
+        addSheet(workbook, "Day Summary", summary);
       } else {
         // A full month of raw 15-second readings could be 900,000+ rows — far
         // more than we need, since the report only needs the value at each
         // day's end. Fetch those specific points directly instead of the bulk data.
-        csv += await buildDailyMonthlyCsv(meters || [], siteId, startDate, endDate);
+        const { breakdown, summary } = await buildDailyMonthlySheet(meters || [], siteId, startDate, endDate);
+        addSheet(workbook, "Daily Breakdown", [...infoRows, [], ...breakdown]);
+        addSheet(workbook, "Month Summary", summary);
       }
 
-      // Chemical events section
+      // Chemical fill history sheet
       if (chemicalEvents && chemicalEvents.length > 0) {
-        csv += `\nCHEMICAL FILL HISTORY\n`;
-        csv += `Meter,Went Low,Topped Up,Washes Used\n`;
-        (chemicalEvents || []).forEach((e: any) => {
+        const rows: (string | number)[][] = [["Meter", "Went Low", "Topped Up", "Washes Used"]];
+        chemicalEvents.forEach((e: any) => {
           const meter = meters?.find((m: any) => m.id === e.meter_id);
           const toppedUp = e.topped_up_at ? new Date(e.topped_up_at).toLocaleString() : "Still low";
           const washesUsed = e.washes_during_low !== null ? e.washes_during_low : "—";
-          csv += `"${meter?.name || "Unknown"}","${new Date(e.went_low_at).toLocaleString()}","${toppedUp}","${washesUsed}"\n`;
+          rows.push([meter?.name || "Unknown", new Date(e.went_low_at).toLocaleString(), toppedUp, washesUsed]);
         });
+        addSheet(workbook, "Chemical Fill History", rows);
       }
 
       // Download
-      const blob = new Blob([csv], { type: "text/csv" });
+      const wbout = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+      const blob = new Blob([wbout], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -289,7 +297,7 @@ function SiteReportsPage() {
                   <li>✓ Month summary + chemical level events</li>
                 </>
               )}
-              <li>✓ Formatted as CSV (Excel compatible)</li>
+              <li>✓ Native Excel format (.xlsx), multiple sheets</li>
             </ul>
           </div>
 
@@ -398,14 +406,31 @@ function SiteReportsPage() {
   );
 }
 
-function csvEscape(v: string | number) {
-  return `"${String(v).replace(/"/g, '""')}"`;
+// Adds a sheet to the workbook from array-of-arrays data, with reasonable
+// auto-sized column widths based on content.
+function addSheet(workbook: XLSX.WorkBook, sheetName: string, rows: (string | number)[][]) {
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const colCount = rows.reduce((max, r) => Math.max(max, r.length), 0);
+  const widths: { wch: number }[] = [];
+  for (let c = 0; c < colCount; c++) {
+    let maxLen = 8;
+    for (const row of rows) {
+      const cell = row[c];
+      if (cell != null) maxLen = Math.max(maxLen, String(cell).length);
+    }
+    widths.push({ wch: Math.min(maxLen + 2, 45) });
+  }
+  ws["!cols"] = widths;
+  // Sheet names can't exceed 31 chars or contain []:*?/\
+  const safeName = sheetName.replace(/[\[\]:*?/\\]/g, "").slice(0, 31);
+  XLSX.utils.book_append_sheet(workbook, ws, safeName);
 }
 
 // Builds an hour-by-hour table for a single day: one row per hour (00:00-23:00),
 // with Daily (used since midnight) and Total (raw cumulative reading) columns
 // for wash/fresh_water meters, and a chemical status column per chemical meter.
-function buildHourlyDailyCsv(meters: any[], readings: any[], dayStart: Date) {
+// Returns both the hourly breakdown rows and a separate day-summary table.
+function buildHourlyDailySheet(meters: any[], readings: any[], dayStart: Date) {
   const washFreshMeters = meters.filter((m) => m.meter_type === "wash" || m.meter_type === "fresh_water");
   const chemicalMeters = meters.filter((m) => m.meter_type === "chemical" || m.meter_type === "chemical_flow");
 
@@ -436,9 +461,7 @@ function buildHourlyDailyCsv(meters: any[], readings: any[], dayStart: Date) {
     midnightValue[m.id] = valueAt(m.id, dayStart) ?? 0;
   });
 
-  // Header
-  let csv = `HOURLY BREAKDOWN\n`;
-  const headerCols = ["Hour"];
+  const headerCols: (string | number)[] = ["Hour"];
   washFreshMeters.forEach((m) => {
     headerCols.push(`${m.name} - Daily (${m.unit || (m.meter_type === "wash" ? "washes" : "")})`);
     headerCols.push(`${m.name} - Total (${m.unit || (m.meter_type === "wash" ? "washes" : "")})`);
@@ -446,7 +469,8 @@ function buildHourlyDailyCsv(meters: any[], readings: any[], dayStart: Date) {
   chemicalMeters.forEach((m) => {
     headerCols.push(`${m.name} - Status`);
   });
-  csv += headerCols.map(csvEscape).join(",") + "\n";
+
+  const breakdown: (string | number)[][] = [headerCols];
 
   const now = new Date();
   const isToday = dayStart.toDateString() === now.toDateString();
@@ -472,22 +496,22 @@ function buildHourlyDailyCsv(meters: any[], readings: any[], dayStart: Date) {
       row.push(state === undefined ? "—" : state >= 1 ? "LOW" : "OK");
     });
 
-    csv += row.map(csvEscape).join(",") + "\n";
+    breakdown.push(row);
   }
 
   // Day summary
-  csv += `\nDAY SUMMARY\n`;
+  const summary: (string | number)[][] = [["Meter", "Daily", "Total / Status"]];
   washFreshMeters.forEach((m) => {
     const total = valueAt(m.id, new Date(dayStart.getTime() + 24 * 3600 * 1000 - 1)) ?? midnightValue[m.id];
     const daily = Math.max(0, total - midnightValue[m.id]);
-    csv += `${csvEscape(m.name)},"Daily: ${daily}, Total: ${total}"\n`;
+    summary.push([m.name, daily, total]);
   });
   chemicalMeters.forEach((m) => {
     const state = valueAt(m.id, new Date(dayStart.getTime() + 24 * 3600 * 1000 - 1));
-    csv += `${csvEscape(m.name)},"${state === undefined ? "No data" : state >= 1 ? "LOW" : "OK"}"\n`;
+    summary.push([m.name, "", state === undefined ? "No data" : state >= 1 ? "LOW" : "OK"]);
   });
 
-  return csv;
+  return { breakdown, summary };
 }
 
 // Builds a day-by-day table for a month: one row per calendar day, with Daily
@@ -498,7 +522,7 @@ function buildHourlyDailyCsv(meters: any[], readings: any[], dayStart: Date) {
 // interval data across several meters could be 900,000+ rows), this fetches
 // only the single last reading at/before each day boundary, per meter — all in
 // parallel — which is all the report actually needs.
-async function buildDailyMonthlyCsv(meters: any[], siteId: string, monthStart: Date, monthEnd: Date) {
+async function buildDailyMonthlySheet(meters: any[], siteId: string, monthStart: Date, monthEnd: Date) {
   const washFreshMeters = meters.filter((m) => m.meter_type === "wash" || m.meter_type === "fresh_water");
   const chemicalMeters = meters.filter((m) => m.meter_type === "chemical" || m.meter_type === "chemical_flow");
   const allMeters = [...washFreshMeters, ...chemicalMeters];
@@ -546,8 +570,7 @@ async function buildDailyMonthlyCsv(meters: any[], siteId: string, monthStart: D
     baseline[m.id] = valueAt(m.id, baselineCutoff) ?? 0;
   });
 
-  let csv = `DAILY BREAKDOWN\n`;
-  const headerCols = ["Date"];
+  const headerCols: (string | number)[] = ["Date"];
   washFreshMeters.forEach((m) => {
     headerCols.push(`${m.name} - Daily (${m.unit || (m.meter_type === "wash" ? "washes" : "")})`);
     headerCols.push(`${m.name} - Total (${m.unit || (m.meter_type === "wash" ? "washes" : "")})`);
@@ -555,7 +578,8 @@ async function buildDailyMonthlyCsv(meters: any[], siteId: string, monthStart: D
   chemicalMeters.forEach((m) => {
     headerCols.push(`${m.name} - Status`);
   });
-  csv += headerCols.map(csvEscape).join(",") + "\n";
+
+  const breakdown: (string | number)[][] = [headerCols];
 
   // Running "previous day total" per meter, starting from the baseline
   const prevTotal: Record<string, number> = { ...baseline };
@@ -581,23 +605,23 @@ async function buildDailyMonthlyCsv(meters: any[], siteId: string, monthStart: D
       row.push(state === undefined ? "—" : state >= 1 ? "LOW" : "OK");
     });
 
-    csv += row.map(csvEscape).join(",") + "\n";
+    breakdown.push(row);
   }
 
   // Month summary
-  csv += `\nMONTH SUMMARY\n`;
+  const summary: (string | number)[][] = [["Meter", "Monthly", "Total / Status"]];
   const monthEndCutoff = cutoffs[lastDay];
   washFreshMeters.forEach((m) => {
     const total = valueAt(m.id, monthEndCutoff) ?? baseline[m.id];
     const monthlyUsed = Math.max(0, total - baseline[m.id]);
-    csv += `${csvEscape(m.name)},"Monthly: ${monthlyUsed}, Total: ${total}"\n`;
+    summary.push([m.name, monthlyUsed, total]);
   });
   chemicalMeters.forEach((m) => {
     const state = valueAt(m.id, monthEndCutoff);
-    csv += `${csvEscape(m.name)},"${state === undefined ? "No data" : state >= 1 ? "LOW" : "OK"}"\n`;
+    summary.push([m.name, "", state === undefined ? "No data" : state >= 1 ? "LOW" : "OK"]);
   });
 
-  return csv;
+  return { breakdown, summary };
 }
 
 function QuickReportButton({
