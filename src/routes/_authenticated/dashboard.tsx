@@ -15,6 +15,9 @@ interface SiteMetric {
   name: string;
   location: string | null;
   machine_type?: string | null;
+  primary_color?: string | null;
+  secondary_color?: string | null;
+  accent_color?: string | null;
   logo_url: string | null;
   online: boolean;
   wash_today: number;
@@ -79,7 +82,7 @@ function DashboardPage() {
 
       const { data: sitesData } = await supabase
         .from("sites")
-        .select("id, name, location, machine_type, logo_url, created_at, fresh_water_daily_threshold_liters")
+        .select("id, name, location, machine_type, logo_url, created_at, fresh_water_daily_threshold_liters, primary_color, secondary_color, accent_color")
         .in("id", siteIds);
 
       if (!sitesData) {
@@ -190,6 +193,9 @@ function DashboardPage() {
           name: site.name,
           location: site.location,
           machine_type: site.machine_type,
+          primary_color: site.primary_color,
+          secondary_color: site.secondary_color,
+          accent_color: site.accent_color,
           logo_url: site.logo_url,
           online,
           wash_today: washToday,
@@ -258,9 +264,21 @@ function DashboardPage() {
 function SiteCard({ site }: { site: SiteMetric }) {
   const chemicalHealthy = site.chemicals_total === 0 || site.chemicals_low === 0;
 
+  // Per-site theme colors (set in Admin > Site Theme) override the global
+  // --primary/--secondary/--accent CSS variables just within this card's
+  // subtree — every bg-primary/text-primary/border-primary etc. utility
+  // class inside automatically picks up the override, no per-element changes needed.
+  const themeStyle: Record<string, string> = {};
+  if (site.primary_color) themeStyle["--primary"] = site.primary_color;
+  if (site.secondary_color) themeStyle["--secondary"] = site.secondary_color;
+  if (site.accent_color) themeStyle["--accent"] = site.accent_color;
+
   return (
     <Link to="/sites/$siteId" params={{ siteId: site.id }}>
-      <div className="group relative bg-card border border-border rounded-xl shadow-sm hover:shadow-md transition-all h-full cursor-pointer overflow-hidden">
+      <div
+        className="group relative bg-card border border-border rounded-xl shadow-sm hover:shadow-md transition-all h-full cursor-pointer overflow-hidden"
+        style={themeStyle}
+      >
         {/* Top bar with status */}
         <div className="absolute top-0 left-0 right-0 h-1 bg-muted">
           <div

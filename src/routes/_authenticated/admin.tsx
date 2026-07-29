@@ -1106,6 +1106,10 @@ function SiteAdminCard({
         </div>
 
         <div className="pt-4 border-t border-border/60">
+          <SiteThemeSettings site={site} onUpdateBranding={onUpdateBranding} />
+        </div>
+
+        <div className="pt-4 border-t border-border/60">
           <WaterAlertSettings site={site} onSaved={() => { /* parent will refetch on next mount */ }} />
         </div>
 
@@ -1116,6 +1120,100 @@ function SiteAdminCard({
         <div className="pt-4 border-t border-border/60">
           <ReportSettings site={site} onSaved={() => { /* parent will refetch on next mount */ }} />
         </div>
+      </div>
+    </div>
+  );
+}
+
+function SiteThemeSettings({
+  site,
+  onUpdateBranding,
+}: {
+  site: Site;
+  onUpdateBranding: (branding: { primary_color: string; secondary_color: string; accent_color: string; logo_url: string | null; background_url: string | null }) => Promise<boolean>;
+}) {
+  const defaults = { primary: "#5ad1e0", secondary: "#243b53", accent: "#2c8f9e" };
+  const [primary, setPrimary] = useState(site.primary_color || defaults.primary);
+  const [secondary, setSecondary] = useState(site.secondary_color || defaults.secondary);
+  const [accent, setAccent] = useState(site.accent_color || defaults.accent);
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    const ok = await onUpdateBranding({
+      primary_color: primary,
+      secondary_color: secondary,
+      accent_color: accent,
+      logo_url: (site as any).logo_url ?? null,
+      background_url: (site as any).background_url ?? null,
+    });
+    setSaving(false);
+  };
+
+  const reset = async () => {
+    setPrimary(defaults.primary);
+    setSecondary(defaults.secondary);
+    setAccent(defaults.accent);
+    setSaving(true);
+    await onUpdateBranding({
+      primary_color: defaults.primary,
+      secondary_color: defaults.secondary,
+      accent_color: defaults.accent,
+      logo_url: (site as any).logo_url ?? null,
+      background_url: (site as any).background_url ?? null,
+    });
+    setSaving(false);
+  };
+
+  const ColorField = ({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) => (
+    <div className="space-y-1">
+      <Label className="text-[10px]">{label}</Label>
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-9 w-9 rounded border border-border cursor-pointer bg-transparent p-0.5 shrink-0"
+        />
+        <Input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-9 text-xs font-mono"
+          placeholder="#5ad1e0"
+        />
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="rounded-xl border border-border/50 bg-muted/20 p-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div className="flex items-center gap-3">
+          <div className="h-8 w-8 rounded bg-muted flex items-center justify-center">
+            <Palette className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <div>
+            <h4 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Site Theme</h4>
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              Colors used on this site's Dashboard tile and Site Details page. Doesn't affect other sites or the global app theme.
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <Button size="sm" variant="outline" onClick={reset} disabled={saving} className="h-8 text-xs font-bold">
+            Reset
+          </Button>
+          <Button size="sm" onClick={save} disabled={saving} className="h-8 text-xs font-bold">
+            {saving ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : null}
+            Save Theme
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-xl">
+        <ColorField label="Primary" value={primary} onChange={setPrimary} />
+        <ColorField label="Secondary" value={secondary} onChange={setSecondary} />
+        <ColorField label="Accent" value={accent} onChange={setAccent} />
       </div>
     </div>
   );

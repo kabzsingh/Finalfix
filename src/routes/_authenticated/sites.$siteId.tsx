@@ -50,7 +50,7 @@ interface ChemLowEvent {
 function SiteDetail() {
   const { siteId } = Route.useParams();
   const navigate = useNavigate();
-  const [site, setSite] = useState<{ name: string; location: string | null; machine_type: string | null; fresh_water_daily_threshold_liters: number | null } | null>(null);
+  const [site, setSite] = useState<{ name: string; location: string | null; machine_type: string | null; fresh_water_daily_threshold_liters: number | null; primary_color: string | null; secondary_color: string | null; accent_color: string | null } | null>(null);
   const [meters, setMeters] = useState<Meter[]>([]);
   const [readings, setReadings] = useState<Reading[]>([]);
   const [totals, setTotals] = useState<Record<string, number>>({});
@@ -84,7 +84,7 @@ function SiteDetail() {
 
   const load = async () => {
     const [{ data: s }, { data: m }, { data: apiKeys }] = await Promise.all([
-      supabase.from("sites").select("name,location,machine_type,fresh_water_daily_threshold_liters").eq("id", siteId).single(),
+      supabase.from("sites").select("name,location,machine_type,fresh_water_daily_threshold_liters,primary_color,secondary_color,accent_color").eq("id", siteId).single(),
       supabase
         .from("site_meters")
         .select("id,meter_type,name,unit,capacity,low_threshold,device_key,position,chemical_group,sensor_type,count_for_avg_water")
@@ -466,8 +466,13 @@ function SiteDetail() {
 
   const meterById = new Map(meters.map((m) => [m.id, m]));
 
+  const pageThemeStyle: Record<string, string> = {};
+  if (site.primary_color) pageThemeStyle["--primary"] = site.primary_color;
+  if (site.secondary_color) pageThemeStyle["--secondary"] = site.secondary_color;
+  if (site.accent_color) pageThemeStyle["--accent"] = site.accent_color;
+
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 space-y-8">
+    <div className="max-w-7xl mx-auto px-4 py-8 space-y-8" style={pageThemeStyle}>
       {/* Header */}
       <div className="flex items-start justify-between gap-4 pb-6 border-b border-border">
         <div className="flex items-start gap-4">
