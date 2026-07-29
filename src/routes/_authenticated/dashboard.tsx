@@ -25,6 +25,7 @@ interface SiteMetric {
   chemicals_low: number;
   is_new_today: boolean;
   fresh_water_alert: boolean;
+  avg_water_per_car: number | null;
 }
 
 function DashboardPage() {
@@ -112,7 +113,7 @@ function DashboardPage() {
 
         const { data: meters } = await supabase
           .from("site_meters")
-          .select("id, meter_type, sensor_type, low_threshold")
+          .select("id, meter_type, sensor_type, low_threshold, count_for_avg_water")
           .eq("site_id", site.id);
 
         // Active low events (topped_up_at IS NULL) are the persisted, debounced
@@ -126,7 +127,7 @@ function DashboardPage() {
           .is("topped_up_at", null);
         const activeLowMeterIds = new Set((activeLowEvents ?? []).map((e: any) => e.meter_id));
 
-        let washToday = 0, washTotal = 0, freshToday = 0, freshTotal = 0, chemLow = 0, chemTotal = 0;
+        let washToday = 0, washTotal = 0, freshToday = 0, freshTotal = 0, chemLow = 0, chemTotal = 0, avgWaterToday = 0;
         let lastSeen = "";
 
         const meterMap = new Map(meters?.map((m: any) => [m.id, m]) || []);
@@ -160,8 +161,10 @@ function DashboardPage() {
             washTotal += latestValue;
             washToday += Math.max(0, latestValue - midnightValue);
           } else if (meter.meter_type === "fresh_water") {
-            freshToday += Math.max(0, latestValue - midnightValue);
+            const deltaToday = Math.max(0, latestValue - midnightValue);
+            freshToday += deltaToday;
             freshTotal += latestValue;
+            if (meter.count_for_avg_water) avgWaterToday += deltaToday;
           } else if (meter.meter_type === "chemical") {
             chemTotal++;
             if (meter.sensor_type === "probe") {
@@ -199,6 +202,7 @@ function DashboardPage() {
           fresh_water_alert:
             site.fresh_water_daily_threshold_liters != null &&
             freshToday > Number(site.fresh_water_daily_threshold_liters),
+          avg_water_per_car: washToday > 0 ? avgWaterToday / washToday : null,
         };
       });
 
@@ -383,6 +387,20 @@ function SiteCard({ site }: { site: SiteMetric }) {
                   ? "all ok"
                   : `${site.chemicals_low} low`}
               </div>
+            </div>
+          </div>
+
+          {/* Avg Water / Car */}
+          <div className="bg-muted rounded-lg p-4 border border-border mb-6">
+            <div className="flex items-center gap-2 mb-2">
+              <Droplets className="h-4 w-4 text-cyan-400" />
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Avg Water / Car</span>
+            </div>
+            <div className="text-2xl font-bold text-foreground">
+              {site.avg_water_per_car !== null ? site.avg_water_per_car.toFixed(1) : "—"}
+            </div>
+            <div className="text-xs text-cyan-400 mt-1">
+              {site.avg_water_per_car !== null ? "L per wash today" : "set meter(s) in Admin"}
             </div>
           </div>
 
