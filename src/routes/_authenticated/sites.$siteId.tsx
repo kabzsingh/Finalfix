@@ -23,6 +23,7 @@ interface Meter {
   device_key: string;
   chemical_group: string | null;
   sensor_type?: "switch" | "probe" | "counter";
+  count_for_avg_water?: boolean;
 }
 interface Reading {
   meter_id: string;
@@ -86,7 +87,7 @@ function SiteDetail() {
       supabase.from("sites").select("name,location,machine_type,fresh_water_daily_threshold_liters").eq("id", siteId).single(),
       supabase
         .from("site_meters")
-        .select("id,meter_type,name,unit,capacity,low_threshold,device_key,position,chemical_group,sensor_type")
+        .select("id,meter_type,name,unit,capacity,low_threshold,device_key,position,chemical_group,sensor_type,count_for_avg_water")
         .eq("site_id", siteId)
         .order("position"),
       supabase.from("site_api_keys").select("last_used_at").eq("site_id", siteId).order("last_used_at", { ascending: false }).limit(1),
@@ -433,13 +434,14 @@ function SiteDetail() {
   const washMeters = meters.filter((m) => m.meter_type === "wash");
   const freshMeters = meters.filter((m) => m.meter_type === "fresh_water");
 
-  // Average water used per car = today's Rinse Water Meter usage ÷ today's
-  // wash count. Specifically uses the Rinse meter (not the combined total
-  // of every fresh_water meter, e.g. Recycle Top Up), since that's the
-  // meter that actually measures water going onto each car.
-  const rinseMeter = freshMeters.find((m) => m.name.toLowerCase().includes("rinse")) ?? freshMeters[0];
-  const rinseToday = rinseMeter ? (todays[rinseMeter.id] ?? 0) : 0;
-  const avgWaterPerCar = rinseMeter && stats.washToday > 0 ? rinseToday / stats.washToday : null;
+  // Average water used per car = today's usage from whichever fresh_water
+  // meter(s) are marked "Count this meter in Avg Water / Car" in Admin
+  // (summed if more than one, e.g. Rinse + a second intake meter),
+  // divided by today's wash count. Configurable per site in Admin >
+  // Meter & Sensor Configuration, instead of guessing from meter name.
+  const avgWaterMeters = freshMeters.filter((m) => m.count_for_avg_water);
+  const rinseToday = avgWaterMeters.reduce((sum, m) => sum + (todays[m.id] ?? 0), 0);
+  const avgWaterPerCar = avgWaterMeters.length > 0 && stats.washToday > 0 ? rinseToday / stats.washToday : null;
 
   const chemicalGroups = useMemo(() => {
     const groups = new Map<string, { label: string; level?: Meter }>();
@@ -594,7 +596,9 @@ function SiteDetail() {
             {avgWaterPerCar !== null ? avgWaterPerCar.toFixed(1) : "—"}
           </div>
           <div className="text-sm text-muted-foreground mt-2">
-            {rinseMeter ? `L per wash (${rinseMeter.name})` : "no rinse meter configured"}
+            {avgWaterMeters.length > 0
+              ? `L per wash (${avgWaterMeters.map((m) => m.name).join(" + ")})`
+              : "no meter selected — set in Admin"}
           </div>
         </div>
       </div>

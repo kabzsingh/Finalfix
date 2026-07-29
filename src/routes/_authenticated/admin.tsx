@@ -36,7 +36,7 @@ interface Site {
   fresh_water_daily_threshold_liters?: number | null;
   machine_type?: string | null;
 }
-interface Meter { id: string; site_id: string; meter_type: "wash"|"fresh_water"|"chemical"|"chemical_flow"; name: string; unit: string; capacity: number | null; low_threshold: number | null; device_key: string; position: number; chemical_group: string | null; modbus_address: number | null; sensor_type: "switch" | "probe" | "counter" }
+interface Meter { id: string; site_id: string; meter_type: "wash"|"fresh_water"|"chemical"|"chemical_flow"; name: string; unit: string; capacity: number | null; low_threshold: number | null; device_key: string; position: number; chemical_group: string | null; modbus_address: number | null; sensor_type: "switch" | "probe" | "counter"; count_for_avg_water: boolean }
 interface ApiKeyRow { id: string; site_id: string; key_prefix: string; label: string | null; revoked: boolean; last_used_at: string | null; created_at: string }
 
 const SETUP_SQL_HINT =
@@ -261,6 +261,22 @@ scripts/setup-admin.sql`}
     }
   };
 
+  const toggleAvgWaterMeter = async (id: string, checked: boolean): Promise<boolean> => {
+    try {
+      const { error } = await supabase.from("site_meters").update({ count_for_avg_water: checked }).eq("id", id);
+      if (error) {
+        toast.error(error.message);
+        return false;
+      }
+      load();
+      toast.success(checked ? "Now counted in Avg Water/Car" : "Excluded from Avg Water/Car");
+      return true;
+    } catch (e: any) {
+      toast.error(e.message || "Failed to update meter");
+      return false;
+    }
+  };
+
   const removeMeter = async (id: string) => {
     if (!confirm("Remove this meter? This cannot be undone.")) return;
     const { error } = await supabase.from("site_meters").delete().eq("id", id);
@@ -368,6 +384,7 @@ scripts/setup-admin.sql`}
               onRemoveSite={() => removeSite(site.id)}
               onAddMeter={(m) => addMeter(site.id, m)}
               onUpdateMeter={updateMeter}
+              onToggleAvgWaterMeter={toggleAvgWaterMeter}
               onRemoveMeter={removeMeter}
               onGenerateKey={() => handleGenKey(site.id)}
               onRevokeKey={revokeKey}
@@ -655,10 +672,11 @@ function SmtpSettingsPanel() {
 }
 
 function MeterRow({
-  meter, onUpdateMeter, onRemoveMeter,
+  meter, onUpdateMeter, onToggleAvgWaterMeter, onRemoveMeter,
 }: {
   meter: Meter;
   onUpdateMeter: (id: string, updates: { capacity: number | null; low_threshold: number | null; modbus_address?: number | null; sensor_type?: "switch" | "probe" | "counter" }) => Promise<boolean>;
+  onToggleAvgWaterMeter: (id: string, checked: boolean) => Promise<boolean>;
   onRemoveMeter: (id: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -667,8 +685,10 @@ function MeterRow({
   const [modbusAddress, setModbusAddress] = useState(meter.modbus_address != null ? String(meter.modbus_address) : "");
   const [sensorType, setSensorType] = useState<"switch" | "probe" | "counter">(meter.sensor_type ?? "switch");
   const [saving, setSaving] = useState(false);
+  const [savingAvgWater, setSavingAvgWater] = useState(false);
   const isChemical = meter.meter_type === "chemical" || meter.meter_type === "chemical_flow";
   const isChemicalLevel = meter.meter_type === "chemical";
+  const isFreshWater = meter.meter_type === "fresh_water";
 
   const handleSave = async () => {
     setSaving(true);
@@ -680,6 +700,12 @@ function MeterRow({
     });
     setSaving(false);
     if (ok) setEditing(false);
+  };
+
+  const handleToggleAvgWater = async (checked: boolean) => {
+    setSavingAvgWater(true);
+    await onToggleAvgWaterMeter(meter.id, checked);
+    setSavingAvgWater(false);
   };
 
   return (
@@ -716,6 +742,18 @@ function MeterRow({
                 </span>
               )}
             </div>
+            {isFreshWater && (
+              <label className="mt-1.5 flex items-center gap-1.5 text-[10px] text-muted-foreground/80 cursor-pointer select-none w-fit">
+                <input
+                  type="checkbox"
+                  checked={meter.count_for_avg_water}
+                  disabled={savingAvgWater}
+                  onChange={(e) => handleToggleAvgWater(e.target.checked)}
+                  className="h-3 w-3 accent-primary"
+                />
+                Count this meter in "Avg Water / Car"
+              </label>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-1">
@@ -794,12 +832,13 @@ function MeterRow({
 }
 
 function SiteAdminCard({
-  site, meters, keys, onRemoveSite, onAddMeter, onUpdateMeter, onRemoveMeter, onGenerateKey, onRevokeKey, onGenerateSketch, onUpdateBranding, onUpdateSiteDetails,
+  site, meters, keys, onRemoveSite, onAddMeter, onUpdateMeter, onToggleAvgWaterMeter, onRemoveMeter, onGenerateKey, onRevokeKey, onGenerateSketch, onUpdateBranding, onUpdateSiteDetails,
 }: {
   site: Site; meters: Meter[]; keys: ApiKeyRow[];
   onRemoveSite: () => void;
   onAddMeter: (m: Partial<Meter>) => Promise<boolean>;
   onUpdateMeter: (id: string, updates: { capacity: number | null; low_threshold: number | null; modbus_address?: number | null; sensor_type?: "switch" | "probe" | "counter" }) => Promise<boolean>;
+  onToggleAvgWaterMeter: (id: string, checked: boolean) => Promise<boolean>;
   onRemoveMeter: (id: string) => void;
   onGenerateKey: () => void;
   onRevokeKey: (id: string) => void;
@@ -916,7 +955,7 @@ function SiteAdminCard({
 
           <div className="space-y-2">
             {meters.map((m) => (
-              <MeterRow key={m.id} meter={m} onUpdateMeter={onUpdateMeter} onRemoveMeter={onRemoveMeter} />
+              <MeterRow key={m.id} meter={m} onUpdateMeter={onUpdateMeter} onToggleAvgWaterMeter={onToggleAvgWaterMeter} onRemoveMeter={onRemoveMeter} />
             ))}
 
             {meters.length === 0 && (
