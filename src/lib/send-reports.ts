@@ -222,7 +222,14 @@ async function logReportAttempt(
 async function processSite(db: Client, site: any, sendgridApiKey: string) {
   const tz = site.timezone || "UTC";
   const local = nowInTz(tz);
-  if (local.hour !== site.report_hour) return { site: site.name, skipped: "hour-mismatch" };
+  // GitHub Actions' scheduled runs are "best effort" and can land anywhere
+  // from a few minutes to a few hours apart rather than exactly on the hour
+  // — an exact hour match here meant a site's report_hour window could be
+  // skipped entirely if no run happened to land within that specific hour.
+  // Using >= instead catches up on the next run after the target hour,
+  // relying on the report_send_log "already-sent" check below (keyed by
+  // day) to prevent sending more than once per day once it does fire.
+  if (local.hour < site.report_hour) return { site: site.name, skipped: "hour-not-reached" };
   const recipients: string[] = (site.report_recipients ?? []).filter((e: string) => /.+@.+\..+/.test(e));
   if (recipients.length === 0) return { site: site.name, skipped: "no-recipients" };
   const { data: meters, error: mErr } = await db.from("site_meters").select("*").eq("site_id", site.id).order("position");
