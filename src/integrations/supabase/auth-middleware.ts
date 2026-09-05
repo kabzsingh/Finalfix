@@ -2,7 +2,7 @@ import { createMiddleware } from '@tanstack/react-start'
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from './types'
 
-const FALLBACK_URL = "https://fqunlzvwtxsfithghfhr.supabase.co";
+const FALLBACK_URL = "https://lbrpxdlgloudnywdlzdi.supabase.co";
 const FALLBACK_KEY = "sb_publishable_i7s0-XEBWmHWGlxRV7Qbvg_sCC5Wi5u";
 
 export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server(
