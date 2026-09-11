@@ -10,7 +10,7 @@ function createSupabaseClient() {
   const SUPABASE_PUBLISHABLE_KEY =
     (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined) ||
     (typeof process !== 'undefined' ? process.env.SUPABASE_PUBLISHABLE_KEY : undefined) ||
-    "sb_publishable_i7s0-XEBWmHWGlxRV7Qbvg_sCC5Wi5u";
+    "sb_publishable_DCDr5jYe_QxV6Rdglz0JcQ_YAQ2D7M9";
 
   return createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
     auth: {

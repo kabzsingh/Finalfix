@@ -16,7 +16,7 @@ export function setRuntimeEnv(env: Env) {
   _runtimeEnv = {
     ...env,
     SUPABASE_URL: env.SUPABASE_URL || "https://lbrpxdlgloudnywdlzdi.supabase.co",
-    SUPABASE_PUBLISHABLE_KEY: env.SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_ANON_KEY || "sb_publishable_i7s0-XEBWmHWGlxRV7Qbvg_sCC5Wi5u",
+    SUPABASE_PUBLISHABLE_KEY: env.SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_ANON_KEY || "sb_publishable_DCDr5jYe_QxV6Rdglz0JcQ_YAQ2D7M9",
     SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_KEY || "",
   };
 }
@@ -47,7 +47,7 @@ export function getRuntimeEnv(): Env {
       (import.meta as any).env?.SUPABASE_PUBLISHABLE_KEY ||
       (import.meta as any).env?.VITE_SUPABASE_PUBLISHABLE_KEY
     )) ||
-    "sb_publishable_i7s0-XEBWmHWGlxRV7Qbvg_sCC5Wi5u";
+    "sb_publishable_DCDr5jYe_QxV6Rdglz0JcQ_YAQ2D7M9";
 
   const svc =
     (typeof process !== "undefined" && (
@@ -60,7 +60,7 @@ export function getRuntimeEnv(): Env {
 
   return {
     SUPABASE_URL: url || "https://lbrpxdlgloudnywdlzdi.supabase.co",
-    SUPABASE_PUBLISHABLE_KEY: pub || "sb_publishable_i7s0-XEBWmHWGlxRV7Qbvg_sCC5Wi5u",
+    SUPABASE_PUBLISHABLE_KEY: pub || "sb_publishable_DCDr5jYe_QxV6Rdglz0JcQ_YAQ2D7M9",
     SUPABASE_SERVICE_ROLE_KEY: svc,
     NODE_ENV: (typeof process !== "undefined" && process.env?.NODE_ENV) || "production",
   };
